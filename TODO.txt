@@ -15,3 +15,8 @@ Lernstunde gestalten
 ---Android---
 Andriod app (vllt. Buildozer)
 
+----- Menu_--------
+1 button für stapel
+1 button für lernen
+Timer 
+zeit pro vokabel
