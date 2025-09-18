@@ -11,7 +11,6 @@ checken ob man stt gratis hinkriegt
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
 Lernstunde gestalten
-Vor und rückseite, zusatztext
 
 ---Android---
 Andriod app (vllt. Buildozer)
@@ -21,3 +20,5 @@ Andriod app (vllt. Buildozer)
 1 button für lernen
 Timer 
 zeit pro vokabel
+
+Pipi stinkt
