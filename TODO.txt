@@ -20,3 +20,5 @@ Andriod app (vllt. Buildozer)
 1 button für lernen
 Timer 
 zeit pro vokabel
+
+Pipi stinkt
