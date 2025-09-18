@@ -75,7 +75,7 @@ if __name__ == "__main__":
         for j in range (0, len(i)):
             print(list(i.keys())[j] +" - "+ list(i.values())[j])
 
-
+    print(save.read_languages("vocab/test.csv"))
 
 
     VocabpyApp().run()

@@ -1,9 +1,8 @@
 ---PC---
-Plattform Hinzufügen
 GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
 Abfrage mit Richtung
 Eingabe
-Speicherung, (UTF-8 CSV, Anki-Kompatible Formatierung)
+Anki-kompatiblität überprüfen
 Ordner, Sprachen
 TTS mit sprache, die irgendwie im csv ist. 
 als exe für Win, bin oder bash für Linux (Portabel)
@@ -21,4 +20,3 @@ Andriod app (vllt. Buildozer)
 Timer 
 zeit pro vokabel
 
-Pipi stinkt
