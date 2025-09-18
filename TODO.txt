@@ -11,7 +11,7 @@ checken ob man stt gratis hinkriegt
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
 Lernstunde gestalten
-
+1 dictionary und die möglichkeit selbst einzutragen mit knopf
 ---Android---
 Andriod app (vllt. Buildozer)
 
@@ -21,4 +21,4 @@ Andriod app (vllt. Buildozer)
 Timer 
 zeit pro vokabel
 
-Pipi stinkt
+
