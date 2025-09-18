@@ -5,3 +5,4 @@ vocab_folder_content = os.listdir(vocab_path)
 
 
 """Texte"""
+welcome_text = "Wilkommen bei Vocabpy"
