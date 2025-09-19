@@ -1,4 +1,5 @@
 import csv
+import yaml
 
 def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch"):
     with open(filename, "w", newline="", encoding="utf-8") as f:
@@ -51,3 +52,15 @@ def change_languages(filename, new_own, new_foreign):
     """Sprach-Metadaten überschreiben, Vokabeln unverändert lassen"""
     vocab, _, _ = load_vocab(filename)
     save_to_vocab(vocab, filename, own_lang=new_own, foreign_lang=new_foreign)
+
+
+def load_settings():
+    #Load config from config.yml and set settings variables
+    with open("config.yml", "r") as file:
+        config_readable = yaml.safe_load(file)
+    return config_readable
+
+def save_settings(config):
+    # Save Settings
+    with open("config.yml", "w") as file:
+        yaml.dump(config, file)

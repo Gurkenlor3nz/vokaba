@@ -1,6 +1,7 @@
 """------Import Python packages------"""
 from datetime import datetime
 import os
+import yaml
 
 
 """------Import kivy widgets------"""
@@ -28,6 +29,7 @@ import save
 """------Init Variables------"""
 selected_stack = ""
 global vocab_current
+config = save.load_settings()
 
 
 def log(text):
@@ -36,10 +38,16 @@ def log(text):
 
 class VocabpyApp(App):
     def build(self):
-        #Window init
         self.window = FloatLayout()
         self.scroll= ScrollView(size_hint=(1, 1))
+        self.main_menu()
+        return self.window
 
+
+    def main_menu(self, instance=None):
+        #Window init
+        log("opened main menu")
+        self.window.clear_widgets()
 
         #Welcome label text
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
@@ -73,19 +81,26 @@ class VocabpyApp(App):
         self.window.add_widget(center_anchor)
 
 
-        return self.window
-
 
     def settings(self, instance):
         log("opened settings")
         self.window.clear_widgets()
 
+        #Settings Title
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
         settings_title = Label(text=labels.settings_title_text, font_size=20, size_hint=(None,None), size=(80, 50))
         top_center.add_widget(settings_title)
         self.window.add_widget(top_center)
 
+        #Title font_size slider
 
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None), size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=self.main_menu)
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
 
 
     def select_stack(self, stack):
@@ -99,5 +114,4 @@ class VocabpyApp(App):
 
 
 if __name__ == "__main__":
-
     VocabpyApp().run()
