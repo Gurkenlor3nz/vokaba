@@ -1,8 +1,7 @@
 """------Import Python packages------"""
 from datetime import datetime
 import os
-import labels
-import save
+
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -15,14 +14,21 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.image import Image
 from kivy.uix.textinput import TextInput
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.floatlayout import FloatLayout
+
 
 
 """------Import files------"""""
-from labels import *
+import labels
+import save
+
 
 """------Init Variables------"""
 selected_stack = ""
+global vocab_current
+
 
 def log(text):
     print("LOG  time: " + str(datetime.now())[11:] + "; content: \"" + text + "\"")
@@ -31,20 +37,29 @@ def log(text):
 class VocabpyApp(App):
     def build(self):
         #Window init
-        self.window = GridLayout()
-        self.window.cols = 2
-        self.window.rows = 2
+        self.window = FloatLayout()
         self.scroll= ScrollView(size_hint=(1, 1))
 
 
-        self.nein_text = Label(text=labels.welcome_text)
-        self.window.add_widget(self.nein_text)
+        #Welcome label text
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
+        welcome_label = Label(text=labels.welcome_text, size_hint = (None, None), size=(300, 40), font_size = 20)
+        top_center.add_widget(welcome_label)
+        self.window.add_widget(top_center)
 
 
+        #Settings button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        settings_button = Button(size_hint = (None, None), size=(64, 64), background_normal="assets/settings_icon.png")
+        settings_button.bind(on_press=self.settings)
+        top_right.add_widget(settings_button)
+        self.window.add_widget(top_right)
+
+
+        #File Selection
+        center_anchor=AnchorLayout(anchor_x="center", anchor_y="center", padding=30)
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y = None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
-        self.scroll.add_widget(self.file_list)
-        self.window.add_widget((self.scroll))
 
         for i in labels.vocab_folder_content:
             if os.path.isfile(os.path.join(labels.vocab_path, i)):
@@ -52,30 +67,37 @@ class VocabpyApp(App):
                 voc_stacks.bind(on_release=lambda btn, name=i: self.select_stack(name))
                 self.file_list.add_widget(voc_stacks)
 
+        self.scroll = ScrollView(size_hint=(None, None), size=(300, 400))
+        self.scroll.add_widget(self.file_list)
+        center_anchor.add_widget(self.scroll)
+        self.window.add_widget(center_anchor)
 
-        self.settings_button = Button(text="Settings")
-        self.settings_button.bind(on_press=self.test)
-        self.window.add_widget(self.settings_button)
 
         return self.window
 
-    def test(self, instance):
+
+    def settings(self, instance):
         log("opened settings")
+        self.window.clear_widgets()
+
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
+        settings_title = Label(text=labels.settings_title_text, font_size=20, size_hint=(None,None), size=(80, 50))
+        top_center.add_widget(settings_title)
+        self.window.add_widget(top_center)
+
+
+
 
     def select_stack(self, stack):
-        print(stack)
+        vocab_file = str("vocab/" + stack)
+        vocab_current = save.load_vocab(vocab_file)
+
+        self.window.clear_widgets()
+        self.scroll = ScrollView(size_hint=(1, 1))
+        log("making vocab asking soon")
+
 
 
 if __name__ == "__main__":
-    vocab = [{"own_language" : "Haus", "foreign_language" : "house", "info" : "Substantiv"},
-             {"own_language" : "laufen", "foreign_language" : "(to) walk", "info" : "Verb"}]
-    save.save_to_vocab(vocab, "vocab/test.csv")
-
-    for i in vocab:
-        for j in range (0, len(i)):
-            print(list(i.keys())[j] +" - "+ list(i.values())[j])
-
-    print(save.read_languages("vocab/test.csv"))
-
 
     VocabpyApp().run()
