@@ -14,6 +14,7 @@ from kivy.core.window import Window
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.image import Image
 from kivy.uix.textinput import TextInput
+from kivy.uix.slider import *
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
@@ -92,7 +93,21 @@ class VocabpyApp(App):
         top_center.add_widget(settings_title)
         self.window.add_widget(top_center)
 
+
         #Title font_size slider
+        scroll=ScrollView(size_hint=(1, 1))
+        settings_content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=20, padding=30)
+        settings_content.bind(minimum_height=settings_content.setter("height"))
+        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size=40,
+                                 size_hint_y=None, height=100)
+
+        title_font_size_slider = Slider(min=10, max=80, value=40,
+                                        size_hint=(1, None),
+                                        height=50)
+        title_font_size_slider.bind(value=self.on_slider_value)
+        settings_content.add_widget(title_font_size_slider)
+        scroll.add_widget(settings_content)
+        self.window.add_widget(scroll)
 
 
         #Back Button
@@ -111,6 +126,8 @@ class VocabpyApp(App):
         self.scroll = ScrollView(size_hint=(1, 1))
         log("making vocab asking soon")
 
+    def on_slider_value(self, instance, value):
+        self.title_label.font_size=value
 
 
 if __name__ == "__main__":
