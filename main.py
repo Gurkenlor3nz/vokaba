@@ -2,7 +2,7 @@
 from datetime import datetime
 import os
 import yaml
-
+from kivy.graphics import Rectangle
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -19,6 +19,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.floatlayout import FloatLayout
+from kivy.graphics import Color, Rectangle
 
 
 
@@ -37,7 +38,32 @@ def log(text):
     print("LOG  time: " + str(datetime.now())[11:] + "; content: \"" + text + "\"")
 
 
-class VocabpyApp(App):
+#Class for touch sliders
+class TouchSlider(Slider):
+    """Slider für die Nutzung IN einem ScrollView.
+    Deaktiviert kurz das vertikale Scrollen, während man den Slider berührt."""
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            # ScrollView finden und Scrollen ausschalten
+            parent = self.parent
+            while parent and not isinstance(parent, ScrollView):
+                parent = parent.parent
+            if parent:
+                parent.do_scroll_y = False
+            return super().on_touch_down(touch)
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        parent = self.parent
+        while parent and not isinstance(parent, ScrollView):
+            parent = parent.parent
+        if parent:
+            parent.do_scroll_y = True
+        return super().on_touch_up(touch)
+
+
+
+class VokabaApp(App):
     def build(self):
         self.window = FloatLayout()
         self.scroll= ScrollView(size_hint=(1, 1))
@@ -89,23 +115,25 @@ class VocabpyApp(App):
 
         #Settings Title
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
-        settings_title = Label(text=labels.settings_title_text, font_size=20, size_hint=(None,None), size=(80, 50))
+        settings_title = Label(text=labels.settings_title_text, font_size=20, size_hint=(None,None),size=(80, 50))
         top_center.add_widget(settings_title)
         self.window.add_widget(top_center)
 
 
-        #Title font_size slider
-        scroll=ScrollView(size_hint=(1, 1))
-        settings_content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=20, padding=30)
+        #Title font size slider
+        center_center = AnchorLayout(
+            anchor_x="center", anchor_y = "center",
+            padding=30, size_hint_y=None,height=60)
+        scroll = ScrollView(size_hint=(1, 1))
+        settings_content=BoxLayout(orientation="vertical", size_hint_y=None, spacing=16, padding=16)
         settings_content.bind(minimum_height=settings_content.setter("height"))
-        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size=40,
-                                 size_hint_y=None, height=100)
+        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size = 20,
+                                 size_hint_y=None, height=80)
+        settings_content.add_widget(self.title_label)
 
-        title_font_size_slider = Slider(min=10, max=80, value=40,
-                                        size_hint=(1, None),
-                                        height=50)
-        title_font_size_slider.bind(value=self.on_slider_value)
-        settings_content.add_widget(title_font_size_slider)
+        for i in range(12):
+            settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))
+
         scroll.add_widget(settings_content)
         self.window.add_widget(scroll)
 
@@ -127,8 +155,8 @@ class VocabpyApp(App):
         log("making vocab asking soon")
 
     def on_slider_value(self, instance, value):
-        self.title_label.font_size=value
-
+        self.title_label.font_size = value
+        self.title.label.height = max(40, value * 1.4)
 
 if __name__ == "__main__":
-    VocabpyApp().run()
+    VokabaApp().run()

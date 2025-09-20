@@ -10,6 +10,7 @@ checken ob man stt gratis hinkriegt
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
 Lernstunde gestalten
+TREE VIEW FOR FILES
 
 ---Android---
 Andriod app (vllt. Buildozer)
