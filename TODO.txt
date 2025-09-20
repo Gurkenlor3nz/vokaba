@@ -1,8 +1,9 @@
 ---PC---
+Plattform Hinzufügen
 GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
 Abfrage mit Richtung
 Eingabe
-Anki-kompatiblität überprüfen
+Speicherung, (UTF-8 CSV, Anki-Kompatible Formatierung)
 Ordner, Sprachen
 TTS mit sprache, die irgendwie im csv ist. 
 als exe für Win, bin oder bash für Linux (Portabel)
@@ -10,7 +11,7 @@ checken ob man stt gratis hinkriegt
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
 Lernstunde gestalten
-
+1 dictionary und die möglichkeit selbst einzutragen mit knopf
 ---Android---
 Andriod app (vllt. Buildozer)
 
@@ -19,4 +20,5 @@ Andriod app (vllt. Buildozer)
 1 button für lernen
 Timer 
 zeit pro vokabel
+
 
