@@ -138,8 +138,6 @@ class VokabaApp(App):
 
 
     def select_stack(self, stack):
-        if not os.path.exists("vocab"): os.makedirs("vocab")
-
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
 
