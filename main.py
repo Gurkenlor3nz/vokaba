@@ -121,6 +121,7 @@ class VokabaApp(App):
         title_size_slider = NoScrollSlider(min=10, max=80,
                                            value=int(config["settings"]["gui"]["title_font_size"]),
                                            size_hint_y=None, height=40)
+        title_size_slider.bind(value=self.on_slider_value)
         """for i in range(12):
             settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))"""
         settings_content.add_widget(self.title_label)
@@ -147,8 +148,11 @@ class VokabaApp(App):
         log("making vocab asking soon")
 
     def on_slider_value(self, instance, value):
-        self.title_label.font_size = value
-        self.title.label.height = max(40, value * 1.4)
+        config["settings"]["gui"]["title_font_size"] = int(value)
+        log("slider moved, config variable updated")
+        save.save_settings(config)
+        log("config variable saved to config.yml")
+
 
     def on_touch_move(self, touch):
         if self.collide_point(*touch.pos):
