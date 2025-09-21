@@ -109,7 +109,7 @@ class VokabaApp(App):
 
 
         # File Selection
-        center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=30)
+        center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=60)
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
         for i in labels.vocab_folder_content:
