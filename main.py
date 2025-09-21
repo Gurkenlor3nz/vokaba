@@ -30,6 +30,7 @@ import save
 """------Init Variables------"""
 selected_stack = ""
 global vocab_current
+global title_size_slider
 config = save.load_settings()
 
 
@@ -45,14 +46,10 @@ class NoScrollSlider(Slider):
             touch.grab(self)
             return super().on_touch_down(touch)
         return False
-
-
     def on_touch_move(self, touch):
         if touch.grab_current is self:
             return super().on_touch_move(touch)
         return False
-
-
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             touch.ungrab(self)
@@ -73,10 +70,11 @@ class VokabaApp(App):
         #Window init
         log("opened main menu")
         self.window.clear_widgets()
+        config = save.load_settings()
 
         #Welcome label text
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
-        welcome_label = Label(text=labels.welcome_text, size_hint = (None, None), size=(300, 40), font_size = 20)
+        welcome_label = Label(text=labels.welcome_text, size_hint = (None, None), size=(300, 40), font_size = config["settings"]["gui"]["title_font_size"])
         top_center.add_widget(welcome_label)
         self.window.add_widget(top_center)
 
@@ -118,9 +116,11 @@ class VokabaApp(App):
         scroll = ScrollView(size_hint=(1, 1))
         settings_content=BoxLayout(orientation="vertical", size_hint_y=None, spacing=16, padding=16)
         settings_content.bind(minimum_height=settings_content.setter("height"))
-        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size = 20,
+        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size = config["settings"]["gui"]["title_font_size"],
                                  size_hint_y=None, height=80)
-        title_size_slider = NoScrollSlider(min=10, max=80, value=20, size_hint_y=None, height=40)
+        title_size_slider = NoScrollSlider(min=10, max=80,
+                                           value=int(config["settings"]["gui"]["title_font_size"]),
+                                           size_hint_y=None, height=40)
         """for i in range(12):
             settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))"""
         settings_content.add_widget(self.title_label)
@@ -131,7 +131,8 @@ class VokabaApp(App):
 
         #Back Button
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
-        back_button = Button(font_size=40, size_hint=(None, None), size=(64, 64), background_normal="assets/back_button.png")
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
