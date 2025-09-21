@@ -2,6 +2,7 @@
 from datetime import datetime
 import os
 import yaml
+from kivy.uix.checkbox import CheckBox
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -19,6 +20,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.floatlayout import FloatLayout
 from kivy.graphics import Color, Rectangle
+from kivy.config import Config
 
 
 
@@ -71,6 +73,8 @@ class VokabaApp(App):
         log("opened main menu")
         self.window.clear_widgets()
         config = save.load_settings()
+        Config.window_icon = "assets/vokaba_icon.png"
+
 
         #Welcome label text
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
@@ -94,6 +98,16 @@ class VokabaApp(App):
         top_left.add_widget(vokaba_logo)
         self.window.add_widget(top_left)
 
+
+        #Add Stack Button
+        bottom_right = AnchorLayout(anchor_x="right", anchor_y="bottom", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/add_stack.png")
+        back_button.bind(on_press=self.add_stack)
+        bottom_right.add_widget(back_button)
+        self.window.add_widget(bottom_right)
+
+
         # File Selection
         center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=30)
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y=None)
@@ -109,7 +123,6 @@ class VokabaApp(App):
         self.scroll.add_widget(self.file_list)
         center_anchor.add_widget(self.scroll)
         self.window.add_widget(center_anchor)
-
 
 
     def settings(self, instance):
@@ -150,7 +163,73 @@ class VokabaApp(App):
 
         self.window.clear_widgets()
         self.scroll = ScrollView(size_hint=(1, 1))
-        log("making vocab asking soon")
+
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=self.main_menu)
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+
+    def add_stack(self, instance):
+        self.window.clear_widgets()
+        log("opened add stack menu")
+
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=self.main_menu)
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+
+        #Add label Button
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
+        add_stack_label = Label(text=labels.add_stack_title_text,
+                                font_size=int(config["settings"]["gui"]["title_font_size"]),
+                                size_hint=(None, None), size=(80, 40))
+        top_center.add_widget(add_stack_label)
+        self.window.add_widget(top_center)
+
+        # Scrollable list for entering stack name and languages
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        scroll = ScrollView(size_hint=(1, 1))
+
+        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout.bind(minimum_height=form_layout.setter("height"))
+
+        # stack name
+        form_layout.add_widget(Label(text=labels.add_stack_filename, size_hint_y=None, height=30))
+        stack_input = TextInput(size_hint_y=None, height=40)
+        form_layout.add_widget(stack_input)
+
+        # own language
+        form_layout.add_widget(Label(text=labels.add_own_language, size_hint_y=None, height=30))
+        own_language_input = TextInput(size_hint_y=None, height=40)
+        form_layout.add_widget(own_language_input)
+
+        # foreign language
+        form_layout.add_widget(Label(text=labels.add_foreign_language, size_hint_y=None, height=30))
+        foreign_language_input = TextInput(size_hint_y=None, height=40)
+        form_layout.add_widget(foreign_language_input)
+
+        # 3 columns
+        row=GridLayout(cols=2, size_hint_y=None, height= 40, spacing=10)
+        row.add_widget(Label(text=labels.three_digit_toggle, size_hint_y=None, height=30))
+        three_columns = CheckBox(active=False, size_hint=(None, None), size=(45, 45))
+        three_columns.bind(active=self.three_column_checkbox)
+        row.add_widget(three_columns)
+        form_layout.add_widget(row)
+
+        scroll.add_widget(form_layout)
+        center_center.add_widget(scroll)
+        self.window.add_widget(center_center)
+
 
     def on_slider_value(self, instance, value):
         config["settings"]["gui"]["title_font_size"] = int(value)
@@ -159,10 +238,16 @@ class VokabaApp(App):
         log("config variable saved to config.yml")
 
 
+    def three_column_checkbox(self, instance=None, value=None):
+        print(str(value))
+
+
     def on_touch_move(self, touch):
         if self.collide_point(*touch.pos):
             return super().on_touch_move(touch)
         return False
+
+
 
 if __name__ == "__main__":
     VokabaApp().run()
