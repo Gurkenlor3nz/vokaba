@@ -2,7 +2,6 @@
 from datetime import datetime
 import os
 import yaml
-from kivy.graphics import Rectangle
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -39,27 +38,26 @@ def log(text):
 
 
 #Class for touch sliders
-class TouchSlider(Slider):
-    """Slider für die Nutzung IN einem ScrollView.
-    Deaktiviert kurz das vertikale Scrollen, während man den Slider berührt."""
+class NoScrollSlider(Slider):
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            # ScrollView finden und Scrollen ausschalten
-            parent = self.parent
-            while parent and not isinstance(parent, ScrollView):
-                parent = parent.parent
-            if parent:
-                parent.do_scroll_y = False
+        # Touch für diesen Slider "festhalten" und normale Slider-Logik ausführen
+            touch.grab(self)
             return super().on_touch_down(touch)
-        return super().on_touch_down(touch)
+        return False
+
+
+    def on_touch_move(self, touch):
+        if touch.grab_current is self:
+            return super().on_touch_move(touch)
+        return False
+
 
     def on_touch_up(self, touch):
-        parent = self.parent
-        while parent and not isinstance(parent, ScrollView):
-            parent = parent.parent
-        if parent:
-            parent.do_scroll_y = True
-        return super().on_touch_up(touch)
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            return super().on_touch_up(touch)
+        return False
 
 
 
@@ -113,13 +111,6 @@ class VokabaApp(App):
         log("opened settings")
         self.window.clear_widgets()
 
-        #Settings Title
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
-        settings_title = Label(text=labels.settings_title_text, font_size=20, size_hint=(None,None),size=(80, 50))
-        top_center.add_widget(settings_title)
-        self.window.add_widget(top_center)
-
-
         #Title font size slider
         center_center = AnchorLayout(
             anchor_x="center", anchor_y = "center",
@@ -129,11 +120,11 @@ class VokabaApp(App):
         settings_content.bind(minimum_height=settings_content.setter("height"))
         self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size = 20,
                                  size_hint_y=None, height=80)
+        title_size_slider = NoScrollSlider(min=10, max=80, value=20, size_hint_y=None, height=40)
+        """for i in range(12):
+            settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))"""
         settings_content.add_widget(self.title_label)
-
-        for i in range(12):
-            settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))
-
+        settings_content.add_widget(title_size_slider)
         scroll.add_widget(settings_content)
         self.window.add_widget(scroll)
 
@@ -157,6 +148,11 @@ class VokabaApp(App):
     def on_slider_value(self, instance, value):
         self.title_label.font_size = value
         self.title.label.height = max(40, value * 1.4)
+
+    def on_touch_move(self, touch):
+        if self.collide_point(*touch.pos):
+            return super().on_touch_move(touch)
+        return False
 
 if __name__ == "__main__":
     VokabaApp().run()
