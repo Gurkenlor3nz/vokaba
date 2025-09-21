@@ -122,8 +122,6 @@ class VokabaApp(App):
                                            value=int(config["settings"]["gui"]["title_font_size"]),
                                            size_hint_y=None, height=40)
         title_size_slider.bind(value=self.on_slider_value)
-        """for i in range(12):
-            settings_content.add_widget(Label(text=f"Option {i + 1}", size_hint_y=None, height=40))"""
         settings_content.add_widget(self.title_label)
         settings_content.add_widget(title_size_slider)
         scroll.add_widget(settings_content)
@@ -140,6 +138,8 @@ class VokabaApp(App):
 
 
     def select_stack(self, stack):
+        if not os.path.exists("vocab"): os.makedirs("vocab")
+
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
 
