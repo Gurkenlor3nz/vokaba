@@ -103,7 +103,7 @@ class VokabaApp(App):
                 voc_stacks = Button(text=i, size_hint_y=None, height=40)
                 voc_stacks.bind(on_release=lambda btn, name=i: self.select_stack(name))
                 self.file_list.add_widget(voc_stacks)
-        self.scroll = ScrollView(size_hint=(None, None), size=(300, 400), do_scroll_y=True)
+        self.scroll = ScrollView(size_hint=(0.5, 0.89), size=(300, 400), do_scroll_y=True)
         # Wichtig: Breite anpassen, damit kein horizontaler Scroll entsteht
         self.file_list.bind(minimum_width=self.file_list.setter("width"))
         self.scroll.add_widget(self.file_list)
