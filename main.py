@@ -205,17 +205,17 @@ class VokabaApp(App):
 
         # stack name
         form_layout.add_widget(Label(text=labels.add_stack_filename, size_hint_y=None, height=30))
-        stack_input = TextInput(size_hint_y=None, height=40)
+        stack_input = TextInput(size_hint_y=None, height=60)
         form_layout.add_widget(stack_input)
 
         # own language
         form_layout.add_widget(Label(text=labels.add_own_language, size_hint_y=None, height=30))
-        own_language_input = TextInput(size_hint_y=None, height=40)
+        own_language_input = TextInput(size_hint_y=None, height=60)
         form_layout.add_widget(own_language_input)
 
         # foreign language
         form_layout.add_widget(Label(text=labels.add_foreign_language, size_hint_y=None, height=30))
-        foreign_language_input = TextInput(size_hint_y=None, height=40)
+        foreign_language_input = TextInput(size_hint_y=None, height=60)
         form_layout.add_widget(foreign_language_input)
 
         # 3 columns
