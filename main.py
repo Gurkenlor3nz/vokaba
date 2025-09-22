@@ -205,26 +205,36 @@ class VokabaApp(App):
 
         # stack name
         form_layout.add_widget(Label(text=labels.add_stack_filename, size_hint_y=None, height=30))
-        stack_input = TextInput(size_hint_y=None, height=60)
-        form_layout.add_widget(stack_input)
+        self.stack_input = TextInput(size_hint_y=None, height=60, multiline=False)
+        stack_input_text = self.stack_input.text
+        form_layout.add_widget(self.stack_input)
 
         # own language
         form_layout.add_widget(Label(text=labels.add_own_language, size_hint_y=None, height=30))
-        own_language_input = TextInput(size_hint_y=None, height=60)
-        form_layout.add_widget(own_language_input)
+        self.own_language_input = TextInput(size_hint_y=None, height=60, multiline=False)
+        own_language_input_text = self.own_language_input.text
+        form_layout.add_widget(self.own_language_input)
 
         # foreign language
         form_layout.add_widget(Label(text=labels.add_foreign_language, size_hint_y=None, height=30))
-        foreign_language_input = TextInput(size_hint_y=None, height=60)
-        form_layout.add_widget(foreign_language_input)
+        self.foreign_language_input = TextInput(size_hint_y=None, height=60, multiline=False)
+        foreign_language_input_text = self.foreign_language_input.text
+        form_layout.add_widget(self.foreign_language_input)
 
         # 3 columns
         row=GridLayout(cols=2, size_hint_y=None, height= 40, spacing=10)
         row.add_widget(Label(text=labels.three_digit_toggle, size_hint_y=None, height=30))
-        three_columns = CheckBox(active=False, size_hint=(None, None), size=(45, 45))
-        three_columns.bind(active=self.three_column_checkbox)
-        row.add_widget(three_columns)
+        self.three_columns = CheckBox(active=False, size_hint=(None, None), size=(45, 45))
+        self.three_columns.bind(active=self.three_column_checkbox)
+        row.add_widget(self.three_columns)
         form_layout.add_widget(row)
+
+        #add stack button
+        spacing=Label(text=" \n ")
+        form_layout.add_widget(spacing)
+        add_stack_button = Button(text=labels.add_stack_button_text,padding=30, size_hint=(1, None), height=70)
+        add_stack_button.bind(on_press=self.add_stack_button_func)
+        form_layout.add_widget(add_stack_button)
 
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
@@ -236,6 +246,19 @@ class VokabaApp(App):
         log("slider moved, config variable updated")
         save.save_settings(config)
         log("config variable saved to config.yml")
+
+    def add_stack_button_func(self, instance=None):
+        # Inhalte auslesen
+        var1 = self.stack_input.text
+        var2 = self.own_language_input.text
+        var3 = self.foreign_language_input.text
+
+        log(f"Stackname: {var1}")
+        log(f"Eigene Sprache: {var2}")
+        log(f"Fremdsprache: {var3}")
+
+        # speichern in der Instanz (falls du später nochmal brauchst)
+        self.var1, self.var2, self.var3 = var1, var2, var3
 
 
     def three_column_checkbox(self, instance=None, value=None):
