@@ -1,8 +1,9 @@
 """------Import Python packages------"""
 from datetime import datetime
 import os
+import os.path
 import yaml
-from kivy.uix.checkbox import CheckBox
+
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -21,7 +22,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.floatlayout import FloatLayout
 from kivy.graphics import Color, Rectangle
 from kivy.config import Config
-
+from kivy.uix.checkbox import CheckBox
 
 
 """------Import files------"""""
@@ -33,6 +34,7 @@ import save
 selected_stack = ""
 global vocab_current
 global title_size_slider
+global three_columns_check
 config = save.load_settings()
 
 
@@ -188,7 +190,7 @@ class VokabaApp(App):
         self.window.add_widget(top_right)
 
 
-        #Add label Button
+        #Add label text
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
         add_stack_label = Label(text=labels.add_stack_title_text,
                                 font_size=int(config["settings"]["gui"]["title_font_size"]),
@@ -241,28 +243,69 @@ class VokabaApp(App):
         self.window.add_widget(center_center)
 
 
+        #Add label at bottom in case of error while adding stack
+        self.bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
+        self.add_stack_error_label = Label(
+            text="",
+            font_size=int(config["settings"]["gui"]["title_font_size"]),
+            size_hint=(None, None),
+            size=(300, 40)
+        )
+        self.bottom_center.add_widget(self.add_stack_error_label)
+        self.window.add_widget(self.bottom_center)
+
+
     def on_slider_value(self, instance, value):
         config["settings"]["gui"]["title_font_size"] = int(value)
         log("slider moved, config variable updated")
         save.save_settings(config)
         log("config variable saved to config.yml")
 
+
     def add_stack_button_func(self, instance=None):
-        # Inhalte auslesen
-        var1 = self.stack_input.text
-        var2 = self.own_language_input.text
-        var3 = self.foreign_language_input.text
-
-        log(f"Stackname: {var1}")
-        log(f"Eigene Sprache: {var2}")
-        log(f"Fremdsprache: {var3}")
-
-        # speichern in der Instanz (falls du später nochmal brauchst)
-        self.var1, self.var2, self.var3 = var1, var2, var3
+        # reading textbox_content
+        actual_stackname, actual_own_language, actual_foreign_language = "", "", ""
+        log("loading, checkbox content")
+        stackname = self.stack_input.text
+        own_language = self.own_language_input.text
+        foreign_language = self.foreign_language_input.text
+        log("done.")
+        log("saving file")
+        if stackname and own_language and foreign_language:
+            actual_own_language, actual_foreign_language = own_language, foreign_language
+            if stackname[-4:] == ".csv":
+                actual_stackname = stackname
+            else:
+                actual_stackname = str(stackname + ".csv")
+            if os.path.isfile("vocab/" + actual_stackname) == False:
+                os.mknod("vocab/" + actual_stackname)
+                log("created file")
+                save.change_languages("vocab/" + actual_stackname, str(actual_own_language),
+                                      str(actual_foreign_language))
+                log("added language info")
+                log("creating finished")
+                self.main_menu()
+            else:
+                log("saving failed, file already exists. trying again...")
+                bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
+                add_stack_label = Label(text=labels.add_stack_title_text_exists,
+                                        font_size=int(config["settings"]["gui"]["title_font_size"]),
+                                        size_hint=(None, None), size=(80, 40))
+                self.add_stack_error_label.text = labels.add_stack_title_text_exists
+        else:
+            log("saving failed, one or more box empty. trying again...")
+            bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
+            add_stack_label = Label(text=labels.add_stack_title_text_empty,
+                                    font_size=int(config["settings"]["gui"]["title_font_size"]),
+                                    size_hint=(None, None), size=(80, 40))
+            self.add_stack_error_label.text = labels.add_stack_title_text_empty
 
 
     def three_column_checkbox(self, instance=None, value=None):
-        print(str(value))
+        if value:
+            three_columns_check=True
+        else:
+            three_columns_check=False
 
 
     def on_touch_move(self, touch):
