@@ -114,9 +114,9 @@ class VokabaApp(App):
         center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=60)
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
-        for i in labels.vocab_folder_content:
+        for i in os.listdir(labels.vocab_path):
             if os.path.isfile(os.path.join(labels.vocab_path, i)):
-                voc_stacks = Button(text=i, size_hint_y=None, height=50)
+                voc_stacks = Button(text=i[:-4], size_hint_y=None, height=50)
                 voc_stacks.bind(on_release=lambda btn, name=i: self.select_stack(name))
                 self.file_list.add_widget(voc_stacks)
         self.scroll = ScrollView(size_hint=(0.7, 0.89), do_scroll_y=True)

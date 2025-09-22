@@ -1,10 +1,7 @@
 import os
-
 """Variables"""
-vocab_path = "vocab"
+vocab_path = "vocab/"
 if not os.path.exists("vocab"): os.makedirs("vocab")
-vocab_folder_content = os.listdir(vocab_path)
-
 
 """Texte"""
 welcome_text = "Willkommen bei Vokaba"
