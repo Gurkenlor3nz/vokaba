@@ -1,7 +1,6 @@
-import os
 """Variables"""
 vocab_path = "vocab/"
-if not os.path.exists("vocab"): os.makedirs("vocab")
+
 
 """Texte"""
 welcome_text = "Willkommen bei Vokaba"
@@ -16,3 +15,4 @@ add_own_language = "Eigene Sprache:"
 add_foreign_language = "Fremdsprache:"
 three_digit_toggle = "            3-Spaltig:"
 add_stack_button_text = "Stapel Hinzufügen"
+delete_stack_button = "Stapel löschen"

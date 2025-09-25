@@ -2,8 +2,11 @@
 from datetime import datetime
 import os
 import os.path
+from ipaddress import ip_address
+
 import yaml
 
+from labels import delete_stack_button
 
 """------Import kivy widgets------"""
 import kivy.core.window
@@ -114,6 +117,7 @@ class VokabaApp(App):
         center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=60)
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
+        if not os.path.exists("vocab"): os.makedirs("vocab")
         for i in os.listdir(labels.vocab_path):
             if os.path.isfile(os.path.join(labels.vocab_path, i)):
                 voc_stacks = Button(text=i[:-4], size_hint_y=None, height=50)
@@ -138,7 +142,8 @@ class VokabaApp(App):
         scroll = ScrollView(size_hint=(1, 1))
         settings_content=BoxLayout(orientation="vertical", size_hint_y=None, spacing=16, padding=16)
         settings_content.bind(minimum_height=settings_content.setter("height"))
-        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label, font_size = config["settings"]["gui"]["title_font_size"],
+        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label,
+                                 font_size = config["settings"]["gui"]["title_font_size"],
                                  size_hint_y=None, height=80)
         title_size_slider = NoScrollSlider(min=10, max=80,
                                            value=int(config["settings"]["gui"]["title_font_size"]),
@@ -158,22 +163,40 @@ class VokabaApp(App):
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
-
     def select_stack(self, stack):
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
-
+        log("opened stack: " + stack)
         self.window.clear_widgets()
-        self.scroll = ScrollView(size_hint=(1, 1))
+        # Scrollable Grid in Center
+        center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=[30, 60, 100, 30])
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        grid = GridLayout(cols=2, spacing=20, size_hint_y=None)
+        grid.bind(minimum_height=grid.setter("height"))
 
 
-        #Back Button
+        # Back button
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
+
+
+        # Delete Stack Button
+        delete_stack_button = Button(text=labels.delete_stack_button, size_hint_y=None, height=80)
+        delete_stack_button.bind(on_press=self.delete_stack_confirmation)
+        grid.add_widget(delete_stack_button)
+
+
+        scroll.add_widget(grid)
+        center_anchor.add_widget(scroll)
+        self.window.add_widget(center_anchor)
+
+
+    def delete_stack_confirmation(self, instance=None):
+        log("Entered delete stack Confirmation")
 
 
     def add_stack(self, instance):
