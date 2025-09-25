@@ -186,7 +186,7 @@ class VokabaApp(App):
 
         # Delete Stack Button
         delete_stack_button = Button(text=labels.delete_stack_button, size_hint_y=None, height=80)
-        delete_stack_button.bind(on_press=self.delete_stack_confirmation)
+        delete_stack_button.bind(on_press=lambda instance: self.delete_stack_confirmation(stack))
         grid.add_widget(delete_stack_button)
 
 
@@ -195,8 +195,51 @@ class VokabaApp(App):
         self.window.add_widget(center_anchor)
 
 
-    def delete_stack_confirmation(self, instance=None):
+    def delete_stack_confirmation(self, stack, instance=None):
         log("Entered delete stack Confirmation")
+        self.window.clear_widgets()
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+
+        #Cancel
+        top_right = AnchorLayout(anchor_x="center", anchor_y="top", padding=[30, 30, 100, 30])
+        back_button = Button(font_size=50, size_hint_y=None, text=labels.cancel)
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+
+        center_center = AnchorLayout(anchor_x="left", anchor_y="top", padding=[30, 130, 30, 30])
+        delete_button = Button(font_size=30, size_hint=(None, None), size=(150, 80), text=labels.delete, markup=True)
+        delete_button.bind(on_press=lambda instance: self.delete_stack(stack))
+        center_center.add_widget(delete_button)
+        top_right.add_widget(center_center)
+
+        self.window.add_widget(top_right)
+
+
+        #Caution labels
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top")
+        caution_labels = BoxLayout(orientation="vertical", padding = 30)
+        cauton_text = Label(text=labels.caution, markup=True, size_hint_y=None,
+                            font_size=int(config["settings"]["gui"]["title_font_size"]))
+        deleting_text = Label(text=labels.delete_stack_confirmation_text, markup=True, size_hint_y=None,
+                              font_size=int(config["settings"]["gui"]["title_font_size"]))
+        not_undone_text = Label(text=labels.cant_be_undone, markup=True, size_hint_y=None,
+                                font_size=int(config["settings"]["gui"]["title_font_size"]))
+        caution_labels.add_widget(cauton_text)
+        caution_labels.add_widget(deleting_text)
+        caution_labels.add_widget(not_undone_text)
+
+
+        top_center.add_widget(caution_labels)
+        self.window.add_widget(top_center)
+
 
 
     def add_stack(self, instance):
@@ -322,6 +365,11 @@ class VokabaApp(App):
                                     font_size=int(config["settings"]["gui"]["title_font_size"]),
                                     size_hint=(None, None), size=(80, 40))
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
+
+
+    def delete_stack(self, stack, instance=None):
+        os.remove("vocab/"+stack)
+        self.main_menu()
 
 
     def three_column_checkbox(self, instance=None, value=None):
