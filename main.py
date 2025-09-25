@@ -2,30 +2,22 @@
 from datetime import datetime
 import os
 import os.path
-from ipaddress import ip_address
-
 import yaml
 
-from labels import delete_stack_button
-
 """------Import kivy widgets------"""
-import kivy.core.window
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.core.window import Window
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.image import Image
-from kivy.uix.textinput import TextInput
-from kivy.uix.slider import *
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.floatlayout import FloatLayout
-from kivy.graphics import Color, Rectangle
 from kivy.config import Config
+
+from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.slider import *
+from kivy.uix.textinput import TextInput
 
 
 """------Import files------"""""
@@ -163,6 +155,7 @@ class VokabaApp(App):
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
+
     def select_stack(self, stack):
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
@@ -188,6 +181,9 @@ class VokabaApp(App):
         delete_stack_button = Button(text=labels.delete_stack_button, size_hint_y=None, height=80)
         delete_stack_button.bind(on_press=lambda instance: self.delete_stack_confirmation(stack))
         grid.add_widget(delete_stack_button)
+
+
+        # Add Vocab Button
 
 
         scroll.add_widget(grid)
@@ -239,7 +235,6 @@ class VokabaApp(App):
 
         top_center.add_widget(caution_labels)
         self.window.add_widget(top_center)
-
 
 
     def add_stack(self, instance):
@@ -327,45 +322,41 @@ class VokabaApp(App):
         save.save_settings(config)
         log("config variable saved to config.yml")
 
-
     def add_stack_button_func(self, instance=None):
         # reading textbox_content
-        actual_stackname, actual_own_language, actual_foreign_language = "", "", ""
-        log("loading, checkbox content")
-        stackname = self.stack_input.text
-        own_language = self.own_language_input.text
-        foreign_language = self.foreign_language_input.text
-        log("done.")
-        log("saving file")
+        log("starting save")
+        stackname = self.stack_input.text.strip()
+        own_language = self.own_language_input.text.strip()
+        foreign_language = self.foreign_language_input.text.strip()
+        latin_active = self.three_columns.active  # Checkbox auslesen
+        log("reading textbox finished")
+
         if stackname and own_language and foreign_language:
-            actual_own_language, actual_foreign_language = own_language, foreign_language
+            # Checking for .csv
             if stackname[-4:] == ".csv":
                 actual_stackname = stackname
             else:
                 actual_stackname = str(stackname + ".csv")
-            if os.path.isfile("vocab/" + actual_stackname) == False:
+
+            if not os.path.isfile("vocab/" + actual_stackname):
                 os.mknod("vocab/" + actual_stackname)
-                log("created file")
-                save.change_languages("vocab/" + actual_stackname, str(actual_own_language),
-                                      str(actual_foreign_language))
-                log("added language info")
-                log("creating finished")
+                log(f"Created file: {actual_stackname}")
+
+                save.save_to_vocab(
+                    vocab=[],
+                    filename="vocab/" + actual_stackname,
+                    own_lang=own_language,
+                    foreign_lang=foreign_language,
+                    latin_lang="Latein",
+                    latin_active=latin_active)
+                log("Added language info and Latin column state")
                 self.main_menu()
             else:
-                log("saving failed, file already exists. trying again...")
-                bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
-                add_stack_label = Label(text=labels.add_stack_title_text_exists,
-                                        font_size=int(config["settings"]["gui"]["title_font_size"]),
-                                        size_hint=(None, None), size=(80, 40))
+                log("Saving failed, file already exists.")
                 self.add_stack_error_label.text = labels.add_stack_title_text_exists
         else:
-            log("saving failed, one or more box empty. trying again...")
-            bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
-            add_stack_label = Label(text=labels.add_stack_title_text_empty,
-                                    font_size=int(config["settings"]["gui"]["title_font_size"]),
-                                    size_hint=(None, None), size=(80, 40))
+            log("Saving failed, one or more input boxes empty.")
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
-
 
     def delete_stack(self, stack, instance=None):
         os.remove("vocab/"+stack)
