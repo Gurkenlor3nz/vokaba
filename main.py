@@ -4,6 +4,8 @@ import os
 import os.path
 import yaml
 
+from labels import add_vocab_button_text
+
 """------Import kivy widgets------"""
 from kivy.app import App
 from kivy.config import Config
@@ -168,6 +170,12 @@ class VokabaApp(App):
         grid.bind(minimum_height=grid.setter("height"))
 
 
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=15)
+        stack_title_label = Label(text=stack[:-4], font_size=int(config["settings"]["gui"]["title_font_size"]), size_hint=(None, None), size=(40, 40))
+        top_center.add_widget(stack_title_label)
+        self.window.add_widget(top_center)
+
+
         # Back button
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
         back_button = Button(font_size=40, size_hint=(None, None),
@@ -184,7 +192,9 @@ class VokabaApp(App):
 
 
         # Add Vocab Button
-
+        add_vocab_button = Button(text=labels.add_vocab_button_text, size_hint_y=None, height=80)
+        add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack))
+        grid.add_widget(add_vocab_button)
 
         scroll.add_widget(grid)
         center_anchor.add_widget(scroll)
@@ -358,8 +368,73 @@ class VokabaApp(App):
             log("Saving failed, one or more input boxes empty.")
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
 
+
+    def add_vocab(self, stack, instance=None):
+        log("entered add vocab")
+        self.window.clear_widgets()
+
+        # Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        scroll = ScrollView(size_hint=(1, 1))
+        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout.bind(minimum_height=form_layout.setter("height"))
+
+        # Own language
+        form_layout.add_widget(Label(text=labels.add_own_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text=""))
+        add_own_language = TextInput(size_hint_y=None, height=60, multiline=False)
+        add_vocab_own_lanauage = add_own_language.text
+        form_layout.add_widget(add_own_language)
+
+        form_layout.add_widget(Label(text="\n\n\n\n"))
+
+        # Foreign language
+        form_layout.add_widget(Label(text=labels.add_foreign_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text=""))
+        add_foreign_language = TextInput(size_hint_y=None, height=60, multiline=False)
+        add_vocab_foreign_language = add_foreign_language.text
+        form_layout.add_widget(add_foreign_language)
+
+        form_layout.add_widget(Label(text="\n\n\n\n"))
+
+        # Latin language
+        if save.read_languages("vocab/"+stack)[3]:
+            form_layout.add_widget(Label(text=labels.add_third_column, font_size=int(config["settings"]["gui"]["title_font_size"])))
+            form_layout.add_widget(Label(text=""))
+            third_column_input = TextInput(size_hint_y=None, height=60, multiline=False)
+            add_vocab_third_column = third_column_input.text
+            form_layout.add_widget(third_column_input)
+
+        form_layout.add_widget(Label(text="\n\n\n\n"))
+
+        # Additional Info
+        form_layout.add_widget(Label(text=labels.add_additional_info, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text=""))
+        add_additional_info = TextInput(size_hint_y=None, height=60, multiline=False)
+        add_vocab_additional_info = add_additional_info.text
+        form_layout.add_widget(add_additional_info)
+
+
+        # Add Button
+        form_layout.add_widget(Label(text="\n\n\n\n"))
+        add_vocab_button = Button(text=labels.add_vocabulary_button_text, size_hint_y=None)
+        form_layout.add_widget(add_vocab_button)
+
+
+        scroll.add_widget(form_layout)
+        center_center.add_widget(scroll)
+        self.window.add_widget(center_center)
+
     def delete_stack(self, stack, instance=None):
         os.remove("vocab/"+stack)
+        log("deleted stack: "+stack)
         self.main_menu()
 
 
