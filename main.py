@@ -8,6 +8,8 @@ import yaml
 """------Import kivy widgets------"""
 from kivy.app import App
 from kivy.config import Config
+from kivy.core.window import Window
+from kivy.clock import Clock
 
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
@@ -19,7 +21,7 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import *
 from kivy.uix.textinput import TextInput
-from kivy.core.window import Window
+
 
 
 """------Import files------"""""
@@ -123,6 +125,7 @@ class VokabaApp(App):
         self.scroll.add_widget(self.file_list)
         center_anchor.add_widget(self.scroll)
         self.window.add_widget(center_anchor)
+
 
 
     def settings(self, instance):
@@ -440,7 +443,6 @@ class VokabaApp(App):
 
         Window.bind(on_key_down=self.on_key_down)
 
-
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
@@ -521,21 +523,44 @@ class VokabaApp(App):
         self.main_menu()
 
     def on_key_down(self, window, key, scancode, codepoint, modifiers):
+        # Prüfe, ob ein TextInput fokussiert ist
+        focused_index = None
         for i, widget in enumerate(self.widgets_add_vocab):
-            if widget.focus:
-                if key == 9:  # Tab
-                    if 'shift' in modifiers:  # Shift+Tab rückwärts
-                        next_index = (i - 1) % len(self.widgets_add_vocab)
-                    else:
-                        next_index = (i + 1) % len(self.widgets_add_vocab)
-                    self.widgets_add_vocab[next_index].focus = True
+            if hasattr(widget, 'focus') and widget.focus:
+                focused_index = i
+                break
+
+        # Wenn nichts fokussiert ist, fokus auf das erste TextInput
+        if focused_index is None:
+            for widget in self.widgets_add_vocab:
+                if hasattr(widget, 'focus'):
+                    widget.focus = True
                     return True
-                elif key == 13:  # Enter
-                    # Button drücken, wenn Enter auf einem TextInput ist
-                    if isinstance(widget, TextInput):
-                        self.widgets_add_vocab[-1].trigger_action(duration=0.1)
-                        return True
+
+        # Tab / Shift+Tab Handling
+        if key == 9:  # Tab
+            if focused_index is not None:
+                if 'shift' in modifiers:  # Shift+Tab rückwärts
+                    next_index = (focused_index - 1) % len(self.widgets_add_vocab)
+                else:
+                    next_index = (focused_index + 1) % len(self.widgets_add_vocab)
+                self.widgets_add_vocab[next_index].focus = True
+            return True
+
+        # Enter drücken
+        if key == 13:  # Enter
+            if focused_index is not None:
+                current = self.widgets_add_vocab[focused_index]
+                if isinstance(current, TextInput):
+                    self.widgets_add_vocab[-1].trigger_action(duration=0.1)
+            return True
+
         return False
+
+
+    def bind_keyboard(self, dt):
+        Window.bind(on_key_down=self.on_key_down)
+
 
     def three_column_checkbox(self, instance=None, value=None):
         if value:
