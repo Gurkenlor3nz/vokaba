@@ -196,6 +196,10 @@ class VokabaApp(App):
         add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack))
         grid.add_widget(add_vocab_button)
 
+
+        # Edit Vocab Metadata
+
+
         scroll.add_widget(grid)
         center_anchor.add_widget(scroll)
         self.window.add_widget(center_anchor)
@@ -405,6 +409,7 @@ class VokabaApp(App):
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Latin language
+        add_vocab_third_column=None
         if save.read_languages("vocab/"+stack)[3]:
             form_layout.add_widget(Label(text=labels.add_third_column, font_size=int(config["settings"]["gui"]["title_font_size"])))
             form_layout.add_widget(Label(text=""))
@@ -425,12 +430,18 @@ class VokabaApp(App):
         # Add Button
         form_layout.add_widget(Label(text="\n\n\n\n"))
         add_vocab_button = Button(text=labels.add_vocabulary_button_text, size_hint_y=None)
+        add_vocab_button.bind(on_press = lambda instance: self.add_vocab_button_func(add_vocab_own_lanauage, add_vocab_foreign_language, add_vocab_additional_info, add_vocab_third_column))
         form_layout.add_widget(add_vocab_button)
 
 
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
+
+
+    def add_vocab_button_func(self,own_lang, foreign_lang, additional_info, third_column=None, instance=None):
+        log("trying to add vocab")
+        print(own_lang, foreign_lang, additional_info, third_column, instance)
 
     def delete_stack(self, stack, instance=None):
         os.remove("vocab/"+stack)
