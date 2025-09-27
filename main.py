@@ -4,7 +4,6 @@ import os
 import os.path
 import yaml
 
-from labels import add_vocab_button_text
 
 """------Import kivy widgets------"""
 from kivy.app import App
@@ -192,13 +191,16 @@ class VokabaApp(App):
         grid.add_widget(delete_stack_button)
 
 
+        # Edit Vocab Metadata
+        edit_metadata_button = Button(text=labels.edit_metadata_button_text, size_hint_y=None, height=80)
+        edit_metadata_button.bind(on_press=lambda instance: self.edit_metadata(stack))
+        grid.add_widget(edit_metadata_button)
+
+
         # Add Vocab Button
         add_vocab_button = Button(text=labels.add_vocab_button_text, size_hint_y=None, height=80)
         add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack, vocab_current))
         grid.add_widget(add_vocab_button)
-
-
-        # Edit Vocab Metadata
 
 
         scroll.add_widget(grid)
@@ -456,6 +458,46 @@ class VokabaApp(App):
         save.save_to_vocab(vocab, "vocab/"+stack)
         print("added to stack")
         self.clear_inputs()
+
+    def edit_metadata(self, stack, instance=None):
+        log("entered edit metadata menu")
+        self.window.clear_widgets()
+        metadata = save.read_languages("vocab/"+stack)
+
+
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        scroll = ScrollView(size_hint=(1, 1))
+        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout.bind(minimum_height=form_layout.setter("height"))
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+
+        self.edit_own_language_textbox = TextInput(size_hint_y=None, height=60, multiline=False, text=metadata[0])
+        form_layout.add_widget(self.edit_own_language_textbox)
+
+        self.edit_foreign_language_textbox = TextInput(size_hint_y=None, height=60, multiline=False, text=metadata[1])
+        form_layout.add_widget(self.edit_foreign_language_textbox)
+
+
+        form_layout.add_widget(Label(text="\n\n\n\n"))
+        add_vocab_button = Button(text=labels.save, size_hint_y=None)
+        add_vocab_button.bind(on_press = lambda instance: self.edit_metadata_func(stack))
+        form_layout.add_widget(add_vocab_button)
+
+        scroll.add_widget(form_layout)
+        center_center.add_widget(scroll)
+        self.window.add_widget(center_center)
+
+    def edit_metadata_func(self, stack, instance=None):
+        save.change_languages("vocab/"+stack, self.edit_own_language_textbox.text, self.edit_foreign_language_textbox.text, "Latein")
+        self.select_stack(stack)
 
     def clear_inputs(self):
         self.add_own_language.text = ""
