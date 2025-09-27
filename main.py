@@ -19,6 +19,7 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import *
 from kivy.uix.textinput import TextInput
+from kivy.core.window import Window
 
 
 """------Import files------"""""
@@ -428,9 +429,16 @@ class VokabaApp(App):
 
         # Add Button
         form_layout.add_widget(Label(text="\n\n\n\n"))
-        add_vocab_button = Button(text=labels.add_vocabulary_button_text, size_hint_y=None)
-        add_vocab_button.bind(on_press = lambda instance: self.add_vocab_button_func(vocab, stack))
-        form_layout.add_widget(add_vocab_button)
+        self.add_vocab_button = Button(text=labels.add_vocabulary_button_text, size_hint_y=None)
+        self.add_vocab_button.bind(on_press = lambda instance: self.add_vocab_button_func(vocab, stack))
+        form_layout.add_widget(self.add_vocab_button)
+
+        if self.third_column_input:
+            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.third_column_input, self.add_additional_info, self.add_vocab_button]
+        else:
+            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.add_additional_info, self.add_vocab_button]
+
+        Window.bind(on_key_down=self.on_key_down)
 
 
         scroll.add_widget(form_layout)
@@ -512,6 +520,22 @@ class VokabaApp(App):
         log("deleted stack: "+stack)
         self.main_menu()
 
+    def on_key_down(self, window, key, scancode, codepoint, modifiers):
+        for i, widget in enumerate(self.widgets_add_vocab):
+            if widget.focus:
+                if key == 9:  # Tab
+                    if 'shift' in modifiers:  # Shift+Tab rückwärts
+                        next_index = (i - 1) % len(self.widgets_add_vocab)
+                    else:
+                        next_index = (i + 1) % len(self.widgets_add_vocab)
+                    self.widgets_add_vocab[next_index].focus = True
+                    return True
+                elif key == 13:  # Enter
+                    # Button drücken, wenn Enter auf einem TextInput ist
+                    if isinstance(widget, TextInput):
+                        self.widgets_add_vocab[-1].trigger_action(duration=0.1)
+                        return True
+        return False
 
     def three_column_checkbox(self, instance=None, value=None):
         if value:
