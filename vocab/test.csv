@@ -1,5 +1,8 @@
 # own_language=Deutsch
 # foreign_language=Englisch
-own_language,foreign_language,info
-Haus,house,Substantiv
-laufen,(to) walk,Verb
+# latin_language=Latein
+# latin_active=False
+own_language,foreign_language,latin_language,info
+Haus,house,,Substantiv
+laufen,(to) walk,,Verb
+Baum,tree,,Substantiv

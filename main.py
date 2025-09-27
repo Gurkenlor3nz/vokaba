@@ -161,6 +161,7 @@ class VokabaApp(App):
     def select_stack(self, stack):
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
+        if "tuple" in str(type(vocab_current)): vocab_current = vocab_current[0]
         log("opened stack: " + stack)
         self.window.clear_widgets()
         # Scrollable Grid in Center
@@ -193,7 +194,7 @@ class VokabaApp(App):
 
         # Add Vocab Button
         add_vocab_button = Button(text=labels.add_vocab_button_text, size_hint_y=None, height=80)
-        add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack))
+        add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack, vocab_current))
         grid.add_widget(add_vocab_button)
 
 
@@ -373,7 +374,7 @@ class VokabaApp(App):
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
 
 
-    def add_vocab(self, stack, instance=None):
+    def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")
         self.window.clear_widgets()
 
@@ -393,44 +394,40 @@ class VokabaApp(App):
         # Own language
         form_layout.add_widget(Label(text=labels.add_own_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
         form_layout.add_widget(Label(text=""))
-        add_own_language = TextInput(size_hint_y=None, height=60, multiline=False)
-        add_vocab_own_lanauage = add_own_language.text
-        form_layout.add_widget(add_own_language)
+        self.add_own_language = TextInput(size_hint_y=None, height=60, multiline=False)
+        form_layout.add_widget(self.add_own_language)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Foreign language
         form_layout.add_widget(Label(text=labels.add_foreign_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
         form_layout.add_widget(Label(text=""))
-        add_foreign_language = TextInput(size_hint_y=None, height=60, multiline=False)
-        add_vocab_foreign_language = add_foreign_language.text
-        form_layout.add_widget(add_foreign_language)
+        self.add_foreign_language = TextInput(size_hint_y=None, height=60, multiline=False)
+        form_layout.add_widget(self.add_foreign_language)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Latin language
-        add_vocab_third_column=None
+        self.third_column_input = None
         if save.read_languages("vocab/"+stack)[3]:
             form_layout.add_widget(Label(text=labels.add_third_column, font_size=int(config["settings"]["gui"]["title_font_size"])))
             form_layout.add_widget(Label(text=""))
-            third_column_input = TextInput(size_hint_y=None, height=60, multiline=False)
-            add_vocab_third_column = third_column_input.text
-            form_layout.add_widget(third_column_input)
+            self.third_column_input = TextInput(size_hint_y=None, height=60, multiline=False)
+            form_layout.add_widget(self.third_column_input)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Additional Info
         form_layout.add_widget(Label(text=labels.add_additional_info, font_size=int(config["settings"]["gui"]["title_font_size"])))
         form_layout.add_widget(Label(text=""))
-        add_additional_info = TextInput(size_hint_y=None, height=60, multiline=False)
-        add_vocab_additional_info = add_additional_info.text
-        form_layout.add_widget(add_additional_info)
+        self.add_additional_info = TextInput(size_hint_y=None, height=60, multiline=False)
+        form_layout.add_widget(self.add_additional_info)
 
 
         # Add Button
         form_layout.add_widget(Label(text="\n\n\n\n"))
         add_vocab_button = Button(text=labels.add_vocabulary_button_text, size_hint_y=None)
-        add_vocab_button.bind(on_press = lambda instance: self.add_vocab_button_func(add_vocab_own_lanauage, add_vocab_foreign_language, add_vocab_additional_info, add_vocab_third_column))
+        add_vocab_button.bind(on_press = lambda instance: self.add_vocab_button_func(vocab, stack))
         form_layout.add_widget(add_vocab_button)
 
 
@@ -439,9 +436,34 @@ class VokabaApp(App):
         self.window.add_widget(center_center)
 
 
-    def add_vocab_button_func(self,own_lang, foreign_lang, additional_info, third_column=None, instance=None):
-        log("trying to add vocab")
-        print(own_lang, foreign_lang, additional_info, third_column, instance)
+    def add_vocab_button_func(self, vocab, stack, instance=None):
+        add_vocab_own_lanauage = self.add_own_language.text
+        add_vocab_foreign_language = self.add_foreign_language.text
+        if self.third_column_input:  add_vocab_third_column = self.third_column_input.text
+        else: add_vocab_third_column=None
+        add_vocab_additional_info = self.add_additional_info.text
+        log("Adding Vocab. Loaded textbox content")
+        if self.third_column_input:
+            vocab.append({'own_language' : add_vocab_own_lanauage,
+                          'foreign_language' : add_vocab_foreign_language,
+                          'latin_language' : add_vocab_third_column,
+                          'info' : add_vocab_additional_info})
+        else:
+            vocab.append({'own_language' : add_vocab_own_lanauage,
+                          'foreign_language' : add_vocab_foreign_language,
+                          'info' : add_vocab_additional_info})
+
+        save.save_to_vocab(vocab, "vocab/"+stack)
+        print("added to stack")
+        self.clear_inputs()
+
+    def clear_inputs(self):
+        self.add_own_language.text = ""
+        self.add_foreign_language.text = ""
+        if self.third_column_input:
+            self.third_column_input.text = ""
+        self.add_additional_info.text = ""
+        self.add_own_language.focus = True
 
     def delete_stack(self, stack, instance=None):
         os.remove("vocab/"+stack)
