@@ -551,7 +551,7 @@ class VokabaApp(App):
         self.select_stack(stack)
 
     def edit_metadata_func(self, stack, instance=None):
-        save.change_languages("vocab/"+stack, self.edit_own_language_textbox.text, self.edit_foreign_language_textbox.text, "Latein")
+        save.change_languages("vocab/"+stack, self.edit_own_language_textbox.text, self.edit_foreign_language_textbox.text, "Latein", save.read_languages("vocab/"+stack)[3])
         self.select_stack(stack)
 
     def clear_inputs(self):
