@@ -207,6 +207,12 @@ class VokabaApp(App):
         grid.add_widget(add_vocab_button)
 
 
+        # Edit Vocab Button
+        edit_vocab_button = Button(text=labels.edit_vocab_button_text, size_hint_y=None, height=80)
+        edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
+        grid.add_widget(edit_vocab_button)
+
+
         scroll.add_widget(grid)
         center_anchor.add_widget(scroll)
         self.window.add_widget(center_anchor)
@@ -505,6 +511,45 @@ class VokabaApp(App):
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
 
+
+    def edit_vocab(self, stack, vocab, instance=None):
+        log("entered edit vocab menu")
+        self.window.clear_widgets()
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        scroll = ScrollView(size_hint=(1, 1))
+        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout.bind(minimum_height=form_layout.setter("height"))
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        matrix = self.build_vocab_grid(form_layout, vocab, save.read_languages("vocab/"+stack)[3])
+
+
+        #Save all button
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding = [30, 30, 100, 30])
+        save_all_button = Button(text=labels.save, size_hint_y=0.13)
+        save_all_button.bind(on_press=lambda instance: self.edit_vocab_func(matrix, stack))
+        top_center.add_widget(save_all_button)
+        self.window.add_widget(top_center)
+        print(vocab)
+
+
+        scroll.add_widget(form_layout)
+        center_center.add_widget(scroll)
+        self.window.add_widget(center_center)
+
+    def edit_vocab_func(self, matrix, stack, instance=None):
+        vocab = self.read_vocab_from_grid(matrix, save.read_languages("vocab/"+stack)[3])
+        save.save_to_vocab(vocab, "vocab/"+stack)
+        log("saved vocab")
+        self.select_stack(stack)
+
     def edit_metadata_func(self, stack, instance=None):
         save.change_languages("vocab/"+stack, self.edit_own_language_textbox.text, self.edit_foreign_language_textbox.text, "Latein")
         self.select_stack(stack)
@@ -557,6 +602,70 @@ class VokabaApp(App):
 
         return False
 
+    def read_vocab_from_grid(self, textinput_matrix, latin_active):
+        vocab_list = []
+
+        for row in textinput_matrix:
+            # Werte holen
+            if latin_active:
+                own, foreign, latin, info = [ti.text.strip() for ti in row]
+            else:
+                own, foreign, info = [ti.text.strip() for ti in row]
+                latin = ""
+
+            # ✅ Leere Zeilen automatisch überspringen
+            if not own and not foreign and not latin and not info:
+                continue
+
+            vocab_list.append({
+                "own_language": own,
+                "foreign_language": foreign,
+                "latin_language": latin,
+                "info": info
+            })
+
+        return vocab_list
+
+
+    def build_vocab_grid(self, parent_layout, vocab_list, latin_active):
+        """
+        parent_layout = z.B. ein BoxLayout oder Screen, in den das Grid eingefügt wird
+        latin_active = None -> KEINE latin-Spalte
+        latin_active = "Latein" (oder egal was) -> Spalte anzeigen
+        """
+
+        # Spaltenanzahl bestimmen
+        cols = 4 if latin_active else 3
+
+        grid = GridLayout(cols=cols, size_hint_y=None)
+        grid.bind(minimum_height=grid.setter("height"))  # wichtig für ScrollView
+
+        textinput_matrix = []
+
+        for vocab in vocab_list:
+            row = []
+
+            # Basis-Spalten
+            for key in ["own_language", "foreign_language"]:
+                ti = TextInput(text=vocab.get(key, ""), multiline=False, size_hint_y=None, height=40)
+                grid.add_widget(ti)
+                row.append(ti)
+
+            # Latein nur, wenn aktiv
+            if latin_active:
+                ti = TextInput(text=vocab.get("latin_language", ""), multiline=False, size_hint_y=None, height=40)
+                grid.add_widget(ti)
+                row.append(ti)
+
+            # Info-Feld immer zuletzt
+            ti = TextInput(text=vocab.get("info", ""), multiline=False, size_hint_y=None, height=40)
+            grid.add_widget(ti)
+            row.append(ti)
+
+            textinput_matrix.append(row)
+
+        parent_layout.add_widget(grid)
+        return textinput_matrix
 
     def bind_keyboard(self, dt):
         Window.bind(on_key_down=self.on_key_down)

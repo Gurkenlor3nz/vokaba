@@ -1,12 +1,11 @@
 ---PC---
 GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
 Abfrage mit Richtung
-Eingabe
 Anki-kompatiblität überprüfen
 Ordner, Sprachen
 TTS mit sprache, die irgendwie im csv ist. 
 als exe für Win, bin oder bash für Linux (Portabel)
-checken ob man stt gratis hinkriegt
+tts einbauen
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
 Lernstunde gestalten
