@@ -494,12 +494,23 @@ class VokabaApp(App):
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
-
+        form_layout.add_widget(Label(text=labels.add_own_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
         self.edit_own_language_textbox = TextInput(size_hint_y=None, height=60, multiline=False, text=metadata[0])
         form_layout.add_widget(self.edit_own_language_textbox)
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
+        form_layout.add_widget(Label(text=labels.add_foreign_language, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
         self.edit_foreign_language_textbox = TextInput(size_hint_y=None, height=60, multiline=False, text=metadata[1])
         form_layout.add_widget(self.edit_foreign_language_textbox)
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
+
+        form_layout.add_widget(Label(text=labels.add_stack_filename, font_size=int(config["settings"]["gui"]["title_font_size"])))
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
+        self.edit_name_textbox = TextInput(size_hint_y=None, height=60, multiline=False, text=stack[:-4])
+        form_layout.add_widget(self.edit_name_textbox)
+        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
@@ -552,6 +563,8 @@ class VokabaApp(App):
 
     def edit_metadata_func(self, stack, instance=None):
         save.change_languages("vocab/"+stack, self.edit_own_language_textbox.text, self.edit_foreign_language_textbox.text, "Latein", save.read_languages("vocab/"+stack)[3])
+        os.rename("vocab/"+stack, "vocab/"+str(self.edit_name_textbox.text)+".csv")
+        stack = self.edit_name_textbox.text+".csv"
         self.select_stack(stack)
 
     def clear_inputs(self):
