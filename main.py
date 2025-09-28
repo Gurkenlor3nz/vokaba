@@ -647,18 +647,18 @@ class VokabaApp(App):
 
             # Basis-Spalten
             for key in ["own_language", "foreign_language"]:
-                ti = TextInput(text=vocab.get(key, ""), multiline=False, size_hint_y=None, height=40)
+                ti = TextInput(text=vocab.get(key, ""), multiline=False, size_hint_y=None, height=60)
                 grid.add_widget(ti)
                 row.append(ti)
 
             # Latein nur, wenn aktiv
             if latin_active:
-                ti = TextInput(text=vocab.get("latin_language", ""), multiline=False, size_hint_y=None, height=40)
+                ti = TextInput(text=vocab.get("latin_language", ""), multiline=False, size_hint_y=None, height=60)
                 grid.add_widget(ti)
                 row.append(ti)
 
             # Info-Feld immer zuletzt
-            ti = TextInput(text=vocab.get("info", ""), multiline=False, size_hint_y=None, height=40)
+            ti = TextInput(text=vocab.get("info", ""), multiline=False, size_hint_y=None, height=60)
             grid.add_widget(ti)
             row.append(ti)
 
