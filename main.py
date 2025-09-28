@@ -533,7 +533,7 @@ class VokabaApp(App):
 
         #Save all button
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding = [30, 30, 100, 30])
-        save_all_button = Button(text=labels.save, size_hint_y=0.13)
+        save_all_button = Button(text=labels.save, size_hint_y=0.08)
         save_all_button.bind(on_press=lambda instance: self.edit_vocab_func(matrix, stack))
         top_center.add_widget(save_all_button)
         self.window.add_widget(top_center)
