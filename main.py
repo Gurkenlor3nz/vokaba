@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 import os.path
 import yaml
+import random
 
 
 """------Import kivy widgets------"""
@@ -127,6 +128,16 @@ class VokabaApp(App):
         self.window.add_widget(center_anchor)
 
 
+        #Learn Button
+        bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=12)
+        learn_button = Button(font_size=40, size_hint=(None, None),
+                             size=(200, 100), background_normal="assets/learn_button.png")
+        learn_button.bind(on_press=self.learn)
+        bottom_center.add_widget(learn_button)
+        self.window.add_widget(bottom_center)
+
+
+
 
     def settings(self, instance):
         log("opened settings")
@@ -187,6 +198,10 @@ class VokabaApp(App):
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
+
+
+        # Add vocab button
+        center_bottom = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
 
 
         # Delete Stack Button
@@ -384,6 +399,46 @@ class VokabaApp(App):
         else:
             log("Saving failed, one or more input boxes empty.")
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
+
+
+    def learn(self, instance=None):
+        log("entered learn menu")
+        self.window.clear_widgets()
+
+        #Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=self.main_menu)
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        all_vocab = []
+        all_vocab_list = []
+        for i in os.listdir("vocab/"):
+            file = save.load_vocab("vocab/"+i)
+            if type(file) == tuple:
+                file = file[0]
+            all_vocab.append(file)
+
+        for i in all_vocab:
+            for j in i:
+                all_vocab_list.append(j)
+                random.shuffle(all_vocab_list)
+
+                for k in all_vocab_list:
+                    front_side_label_text = k["own_language"]
+                    back_side_label_text = k["foreign_language"]
+                    additional_info_label_text = k["info"]
+
+                    center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30)
+                    front_side_label = Button(text=front_side_label_text,
+                                              font_size=int(config["settings"]["gui"]["title_font_size"]),
+                                              size_hint=(0.6, 0.4))
+                    center_center.add_widget(front_side_label)
+                    self.window.add_widget(center_center)
+
+
 
 
     def add_vocab(self, stack, vocab, instance=None):
