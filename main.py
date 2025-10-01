@@ -273,6 +273,9 @@ class VokabaApp(App):
         edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_vocab_button)
 
+        # TODO:Learn vocab with flashcards button
+
+
 
         scroll.add_widget(grid)
         center_anchor.add_widget(scroll)
@@ -613,9 +616,11 @@ class VokabaApp(App):
         form_layout.add_widget(self.add_vocab_button)
 
         if self.third_column_input:
-            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.third_column_input, self.add_additional_info, self.add_vocab_button]
+            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.third_column_input,
+                                      self.add_additional_info, self.add_vocab_button]
         else:
-            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.add_additional_info, self.add_vocab_button]
+            self.widgets_add_vocab = [self.add_own_language, self.add_foreign_language, self.add_additional_info,
+                                      self.add_vocab_button]
 
         Window.bind(on_key_down=self.on_key_down)
 
