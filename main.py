@@ -79,14 +79,14 @@ class VokabaApp(App):
 
 
         #Welcome label text
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         welcome_label = Label(text=labels.welcome_text, size_hint = (None, None), size=(300, 40), font_size = config["settings"]["gui"]["title_font_size"])
         top_center.add_widget(welcome_label)
         self.window.add_widget(top_center)
 
 
         #Settings button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         settings_button = Button(size_hint = (None, None), size=(64, 64), background_normal="assets/settings_icon.png")
         settings_button.bind(on_press=self.settings)
         top_right.add_widget(settings_button)
@@ -102,7 +102,7 @@ class VokabaApp(App):
 
 
         #Add Stack Button
-        bottom_right = AnchorLayout(anchor_x="right", anchor_y="bottom", padding=30)
+        bottom_right = AnchorLayout(anchor_x="right", anchor_y="bottom", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/add_stack.png")
         back_button.bind(on_press=self.add_stack)
@@ -111,7 +111,7 @@ class VokabaApp(App):
 
 
         # File Selection
-        center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=60)
+        center_anchor = AnchorLayout(anchor_x="center", anchor_y="center", padding=60*float(config["settings"]["gui"]["padding_multiplicator"]))
         self.file_list = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
         if not os.path.exists("vocab"): os.makedirs("vocab")
@@ -129,7 +129,7 @@ class VokabaApp(App):
 
 
         #Learn Button
-        bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=12)
+        bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=12*float(config["settings"]["gui"]["padding_multiplicator"]))
         learn_button = Button(font_size=40, size_hint=(None, None),
                              size=(200, 100), background_normal="assets/learn_button.png")
         learn_button.bind(on_press=self.learn)
@@ -143,28 +143,56 @@ class VokabaApp(App):
         log("opened settings")
         self.window.clear_widgets()
 
-        #Title font size slider
-        center_center = AnchorLayout(
-            anchor_x="center", anchor_y = "center",
-            padding=30, size_hint_y=None,height=60)
+
         scroll = ScrollView(size_hint=(1, 1))
-        settings_content=BoxLayout(orientation="vertical", size_hint_y=None, spacing=16, padding=16)
+        settings_content=BoxLayout(orientation="vertical", size_hint_y=None, spacing=16, padding=16*float(config["settings"]["gui"]["padding_multiplicator"]))
         settings_content.bind(minimum_height=settings_content.setter("height"))
-        self.title_label = Label(text=labels.settings_title_font_size_slider_test_label,
-                                 font_size = config["settings"]["gui"]["title_font_size"],
-                                 size_hint_y=None, height=80)
-        title_size_slider = NoScrollSlider(min=10, max=80,
-                                           value=int(config["settings"]["gui"]["title_font_size"]),
-                                           size_hint_y=None, height=40)
-        title_size_slider.bind(value=self.on_slider_value)
-        settings_content.add_widget(self.title_label)
-        settings_content.add_widget(title_size_slider)
+
+        settings_definitions = [
+            {
+                "label": labels.settings_title_font_size_slider_test_label,
+                "min": 10, "max": 80,
+                "value": float(config["settings"]["gui"]["title_font_size"]),
+                "callback": self.on_setting_changed(["settings", "gui", "title_font_size"], int)
+            },
+            {
+                "label": labels.settings_font_size_slider,
+                "min": 10, "max" : 30,
+                "value": float(config["settings"]["gui"]["text_font_size"]),
+                "callback": self.on_setting_changed(["settings", "gui", "text_font_size"], int)
+            },
+            {
+                "label": labels.settings_padding_multiplikator_slider,
+                "min": 0.1, "max": 3,
+                "value": float(config["settings"]["gui"]["padding_multiplicator"]),
+                "callback": self.on_setting_changed(["settings", "gui", "padding_multiplicator"], float)
+            },
+        ]
+
+        for setting in settings_definitions:
+            lbl = Label(
+                text=setting["label"],
+                font_size=config["settings"]["gui"]["title_font_size"],
+                size_hint_y=None, height=80
+            )
+
+            slider = NoScrollSlider(
+                min=setting["min"], max=setting["max"],
+                value=setting["value"],
+                size_hint_y=None, height=40
+            )
+            slider.bind(value=setting["callback"])
+
+            settings_content.add_widget(lbl)
+            settings_content.add_widget(slider)
+
+
         scroll.add_widget(settings_content)
         self.window.add_widget(scroll)
 
 
         #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
@@ -185,14 +213,14 @@ class VokabaApp(App):
         grid.bind(minimum_height=grid.setter("height"))
 
 
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=15)
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=15*float(config["settings"]["gui"]["padding_multiplicator"]))
         stack_title_label = Label(text=stack[:-4], font_size=int(config["settings"]["gui"]["title_font_size"]), size_hint=(None, None), size=(40, 40))
         top_center.add_widget(stack_title_label)
         self.window.add_widget(top_center)
 
 
         # Back button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
@@ -201,29 +229,29 @@ class VokabaApp(App):
 
 
         # Add vocab button
-        center_bottom = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
+        center_bottom = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
 
 
         # Delete Stack Button
-        delete_stack_button = Button(text=labels.delete_stack_button, size_hint_y=None, height=80)
+        delete_stack_button = Button(text=labels.delete_stack_button, size_hint_y=None, height=80, font_size=config["settings"]["gui"]["text_font_size"])
         delete_stack_button.bind(on_press=lambda instance: self.delete_stack_confirmation(stack))
         grid.add_widget(delete_stack_button)
 
 
         # Edit Vocab Metadata
-        edit_metadata_button = Button(text=labels.edit_metadata_button_text, size_hint_y=None, height=80)
+        edit_metadata_button = Button(text=labels.edit_metadata_button_text, size_hint_y=None, height=80, font_size=config["settings"]["gui"]["text_font_size"])
         edit_metadata_button.bind(on_press=lambda instance: self.edit_metadata(stack))
         grid.add_widget(edit_metadata_button)
 
 
         # Add Vocab Button
-        add_vocab_button = Button(text=labels.add_vocab_button_text, size_hint_y=None, height=80)
+        add_vocab_button = Button(text=labels.add_vocab_button_text, size_hint_y=None, height=80, font_size=config["settings"]["gui"]["text_font_size"])
         add_vocab_button.bind(on_press=lambda instance: self.add_vocab(stack, vocab_current))
         grid.add_widget(add_vocab_button)
 
 
         # Edit Vocab Button
-        edit_vocab_button = Button(text=labels.edit_vocab_button_text, size_hint_y=None, height=80)
+        edit_vocab_button = Button(text=labels.edit_vocab_button_text, size_hint_y=None, height=80, font_size=config["settings"]["gui"]["text_font_size"])
         edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_vocab_button)
 
@@ -238,7 +266,7 @@ class VokabaApp(App):
         self.window.clear_widgets()
 
         #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=lambda instance: self.select_stack(stack))
@@ -263,7 +291,7 @@ class VokabaApp(App):
 
         #Caution labels
         top_center = AnchorLayout(anchor_x="center", anchor_y="top")
-        caution_labels = BoxLayout(orientation="vertical", padding = 30)
+        caution_labels = BoxLayout(orientation="vertical", padding = 30*float(config["settings"]["gui"]["padding_multiplicator"]))
         cauton_text = Label(text=labels.caution, markup=True, size_hint_y=None,
                             font_size=int(config["settings"]["gui"]["title_font_size"]))
         deleting_text = Label(text=labels.delete_stack_confirmation_text, markup=True, size_hint_y=None,
@@ -285,7 +313,7 @@ class VokabaApp(App):
 
 
         #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
@@ -294,7 +322,7 @@ class VokabaApp(App):
 
 
         #Add label text
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30)
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         add_stack_label = Label(text=labels.add_stack_title_text,
                                 font_size=int(config["settings"]["gui"]["title_font_size"]),
                                 size_hint=(None, None), size=(80, 40))
@@ -302,33 +330,33 @@ class VokabaApp(App):
         self.window.add_widget(top_center)
 
         # Scrollable list for entering stack name and languages
-        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80*float(config["settings"]["gui"]["padding_multiplicator"]))
         scroll = ScrollView(size_hint=(1, 1))
 
-        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout = GridLayout(cols=1, spacing=15, padding=30*float(config["settings"]["gui"]["padding_multiplicator"]), size_hint_y=None)
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
         # stack name
-        form_layout.add_widget(Label(text=labels.add_stack_filename, size_hint_y=None, height=30))
+        form_layout.add_widget(Label(text=labels.add_stack_filename, size_hint_y=None, height=30, font_size=config["settings"]["gui"]["text_font_size"]))
         self.stack_input = TextInput(size_hint_y=None, height=60, multiline=False)
         stack_input_text = self.stack_input.text
         form_layout.add_widget(self.stack_input)
 
         # own language
-        form_layout.add_widget(Label(text=labels.add_own_language, size_hint_y=None, height=30))
+        form_layout.add_widget(Label(text=labels.add_own_language, size_hint_y=None, height=30, font_size=config["settings"]["gui"]["text_font_size"]))
         self.own_language_input = TextInput(size_hint_y=None, height=60, multiline=False)
         own_language_input_text = self.own_language_input.text
         form_layout.add_widget(self.own_language_input)
 
         # foreign language
-        form_layout.add_widget(Label(text=labels.add_foreign_language, size_hint_y=None, height=30))
+        form_layout.add_widget(Label(text=labels.add_foreign_language, size_hint_y=None, height=30, font_size=config["settings"]["gui"]["text_font_size"]))
         self.foreign_language_input = TextInput(size_hint_y=None, height=60, multiline=False)
         foreign_language_input_text = self.foreign_language_input.text
         form_layout.add_widget(self.foreign_language_input)
 
         # 3 columns
         row=GridLayout(cols=2, size_hint_y=None, height= 40, spacing=10)
-        row.add_widget(Label(text=labels.three_digit_toggle, size_hint_y=None, height=30))
+        row.add_widget(Label(text=labels.three_digit_toggle, size_hint_y=None, height=30, font_size=config["settings"]["gui"]["text_font_size"]))
         self.three_columns = CheckBox(active=False, size_hint=(None, None), size=(45, 45))
         self.three_columns.bind(active=self.three_column_checkbox)
         row.add_widget(self.three_columns)
@@ -337,7 +365,7 @@ class VokabaApp(App):
         #add stack button
         spacing=Label(text=" \n ")
         form_layout.add_widget(spacing)
-        add_stack_button = Button(text=labels.add_stack_button_text,padding=30, size_hint=(1, None), height=70)
+        add_stack_button = Button(text=labels.add_stack_button_text,padding=30*float(config["settings"]["gui"]["padding_multiplicator"]), size_hint=(1, None), height=70)
         add_stack_button.bind(on_press=self.add_stack_button_func)
         form_layout.add_widget(add_stack_button)
 
@@ -347,7 +375,7 @@ class VokabaApp(App):
 
 
         #Add label at bottom in case of error while adding stack
-        self.bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30)
+        self.bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         self.add_stack_error_label = Label(
             text="",
             font_size=int(config["settings"]["gui"]["title_font_size"]),
@@ -357,12 +385,25 @@ class VokabaApp(App):
         self.bottom_center.add_widget(self.add_stack_error_label)
         self.window.add_widget(self.bottom_center)
 
+    def on_setting_changed(self, key_path, cast_type):
+        def callback(instance, value):
+            # Wert passend casten
+            if cast_type == int:
+                value = int(value)
+            elif cast_type == float:
+                value = float(value)
 
-    def on_slider_value(self, instance, value):
-        config["settings"]["gui"]["title_font_size"] = int(value)
-        log("slider moved, config variable updated")
-        save.save_settings(config)
-        log("config variable saved to config.yml")
+            # Key-Pfad wie ["settings","gui","title_font_size"] durchlaufen
+            ref = config
+            for key in key_path[:-1]:
+                ref = ref[key]
+            ref[key_path[-1]] = value
+
+            log(f"{key_path[-1]} updated to {value}")
+            save.save_settings(config)
+            log("config saved")
+
+        return callback
 
     def add_stack_button_func(self, instance=None):
         # reading textbox_content
@@ -400,62 +441,95 @@ class VokabaApp(App):
             log("Saving failed, one or more input boxes empty.")
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
 
-
     def learn(self, instance=None):
         log("entered learn menu")
         self.window.clear_widgets()
 
-        #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        # Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
+        # --- Vokabeln laden ---
         all_vocab = []
-        all_vocab_list = []
+        self.all_vocab_list = []  # für später speichern!
+        self.is_back = False
+        self.current_vocab_index = 0
+
         for i in os.listdir("vocab/"):
-            file = save.load_vocab("vocab/"+i)
-            if type(file) == tuple:
+            file = save.load_vocab("vocab/" + i)
+            if isinstance(file, tuple):
                 file = file[0]
             all_vocab.append(file)
 
         for i in all_vocab:
             for j in i:
-                all_vocab_list.append(j)
-                random.shuffle(all_vocab_list)
+                self.all_vocab_list.append(j)
+                random.shuffle(self.all_vocab_list)
 
-                for k in all_vocab_list:
-                    front_side_label_text = k["own_language"]
-                    back_side_label_text = k["foreign_language"]
-                    additional_info_label_text = k["info"]
+        self.max_current_vocab_index = len(self.all_vocab_list)
 
-                    center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30)
-                    front_side_label = Button(text=front_side_label_text,
-                                              font_size=int(config["settings"]["gui"]["title_font_size"]),
-                                              size_hint=(0.6, 0.4))
-                    center_center.add_widget(front_side_label)
-                    self.window.add_widget(center_center)
+        # Erste Vokabel anzeigen (Vorderseite)
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+        front_text = current_vocab["own_language"]
 
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
+        self.front_side_label = Button(
+            text=front_text,
+            font_size=int(config["settings"]["gui"]["title_font_size"]),
+            size_hint=(0.6, 0.8)
+        )
+        self.front_side_label.bind(on_press=self.flip_card_learn_func)
+        center_center.add_widget(self.front_side_label)
+        self.window.add_widget(center_center)
 
+    def flip_card_learn_func(self, instance=None):
+        log("flipping vocab card")
 
+        if self.is_back:
+            # === Zurück zur Vorderseite (gleiche Vokabel) ===
+            current_vocab = self.all_vocab_list[self.current_vocab_index]
+            self.front_side_label.text = current_vocab["own_language"]
+            self.is_back = False
+
+        else:
+            # === Nächste Vokabel anzeigen (Rückseite) ===
+            if self.current_vocab_index >= self.max_current_vocab_index - 1:
+                self.current_vocab_index = 0
+            else:
+                self.current_vocab_index += 1
+
+            current_vocab = self.all_vocab_list[self.current_vocab_index]
+            back = current_vocab["foreign_language"]
+            additional = current_vocab["info"]
+            latin = current_vocab["latin_language"] or None
+
+            # Rückseite zusammensetzen
+            if latin:
+                self.front_side_label.text = back + "\n\n" + additional + "\n\n" + latin
+            else:
+                self.front_side_label.text = back + "\n\n" + additional
+
+            self.is_back = True
 
     def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")
         self.window.clear_widgets()
 
         # Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=lambda instance: self.select_stack(stack))
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
-        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80*float(config["settings"]["gui"]["padding_multiplicator"]))
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout = GridLayout(cols=1, spacing=15, padding=30*float(config["settings"]["gui"]["padding_multiplicator"]), size_hint_y=None)
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
         # Own language
@@ -536,13 +610,13 @@ class VokabaApp(App):
         metadata = save.read_languages("vocab/"+stack)
 
 
-        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80*float(config["settings"]["gui"]["padding_multiplicator"]))
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout = GridLayout(cols=1, spacing=15, padding=30*float(config["settings"]["gui"]["padding_multiplicator"]), size_hint_y=None)
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
         #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=lambda instance: self.select_stack(stack))
@@ -581,13 +655,13 @@ class VokabaApp(App):
     def edit_vocab(self, stack, vocab, instance=None):
         log("entered edit vocab menu")
         self.window.clear_widgets()
-        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80)
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center", padding=80*float(config["settings"]["gui"]["padding_multiplicator"]))
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(cols=1, spacing=15, padding=30, size_hint_y=None)
+        form_layout = GridLayout(cols=1, spacing=15, padding=30*float(config["settings"]["gui"]["padding_multiplicator"]), size_hint_y=None)
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
         #Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=lambda instance: self.select_stack(stack))
@@ -599,7 +673,7 @@ class VokabaApp(App):
 
         #Save all button
         top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding = [30, 30, 100, 30])
-        save_all_button = Button(text=labels.save, size_hint_y=0.08)
+        save_all_button = Button(text=labels.save, size_hint_y=0.08, font_size=config["settings"]["gui"]["text_font_size"])
         save_all_button.bind(on_press=lambda instance: self.edit_vocab_func(matrix, stack))
         top_center.add_widget(save_all_button)
         self.window.add_widget(top_center)
