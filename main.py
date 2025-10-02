@@ -273,7 +273,11 @@ class VokabaApp(App):
         edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_vocab_button)
 
-        # TODO:Learn vocab with flashcards button
+        # Learn stack with flashcards Button
+        learn_vocab_button = Button(text=labels.learn_stack_vocab_button_text, size_hint_y=None, height=80,
+                                    font_size=config["settings"]["gui"]["text_font_size"])
+        learn_vocab_button.bind(on_press=lambda instance: self.learn_vocab_stack(stack))
+        grid.add_widget(learn_vocab_button)
 
 
 
@@ -522,6 +526,7 @@ class VokabaApp(App):
         center_center.add_widget(self.front_side_label)
         self.window.add_widget(center_center)
 
+
     def flip_card_learn_func(self, instance=None):
         log("flipping vocab card")
 
@@ -742,6 +747,47 @@ class VokabaApp(App):
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
+
+
+    def learn_vocab_stack(self, stack, instance=None):
+        log("entered learn vocab menu")
+        self.window.clear_widgets()
+        self.all_vocab_list=[]
+        self.current_vocab_index = 0
+        self.is_back = False
+
+        stack_vocab = save.load_vocab("vocab/"+stack)
+        if type(stack_vocab) == tuple:  stack_vocab = stack_vocab[0]
+        for i in stack_vocab:   self.all_vocab_list.append(i)
+        random.shuffle(self.all_vocab_list)
+        self.max_current_vocab_index = len(self.all_vocab_list)
+
+
+        # Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30)
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=lambda instance: self.select_stack(stack))
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        self.max_current_vocab_index = len(self.all_vocab_list)
+
+        # Erste Vokabel anzeigen (Vorderseite)
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+        front_text = current_vocab["own_language"]
+
+        center_center = AnchorLayout(anchor_x="center", anchor_y="center",
+                                     padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
+        self.front_side_label = Button(
+            text=front_text,
+            font_size=int(config["settings"]["gui"]["title_font_size"]),
+            size_hint=(0.6, 0.8)
+        )
+        self.front_side_label.bind(on_press=self.flip_card_learn_func)
+        center_center.add_widget(self.front_side_label)
+        self.window.add_widget(center_center)
+
 
     def edit_vocab_func(self, matrix, stack, instance=None):
         vocab = self.read_vocab_from_grid(matrix, save.read_languages("vocab/"+stack)[3])
