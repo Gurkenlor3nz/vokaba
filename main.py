@@ -140,7 +140,7 @@ class VokabaApp(App):
                                      padding=12*float(config["settings"]["gui"]["padding_multiplicator"]))
         learn_button = Button(font_size=40, size_hint=(None, None),
                              size=(200, 100), background_normal="assets/learn_button.png")
-        learn_button.bind(on_press=self.learn)
+        learn_button.bind(on_press=lambda instance: self.learn(stack=None))
         bottom_center.add_widget(learn_button)
         self.window.add_widget(bottom_center)
 
@@ -273,10 +273,11 @@ class VokabaApp(App):
         edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_vocab_button)
 
-        # Learn stack with flashcards Button
+
+        # Learn stack Button
         learn_vocab_button = Button(text=labels.learn_stack_vocab_button_text, size_hint_y=None, height=80,
                                     font_size=config["settings"]["gui"]["text_font_size"])
-        learn_vocab_button.bind(on_press=lambda instance: self.learn_vocab_stack(stack))
+        learn_vocab_button.bind(on_press=lambda instance: self.learn(stack))
         grid.add_widget(learn_vocab_button)
 
 
@@ -479,13 +480,15 @@ class VokabaApp(App):
             log("Saving failed, one or more input boxes empty.")
             self.add_stack_error_label.text = labels.add_stack_title_text_empty
 
-    def learn(self, instance=None):
-        log("entered learn menu")
+    def learn(self, stack=None, mode="front_back", instance=None):
+        log(f"entered learn menu with mode={mode}")
+        self.learn_mode = mode  # Speichere den Modus
+
         self.window.clear_widgets()
 
         # Back Button
         top_right = AnchorLayout(anchor_x="right", anchor_y="top",
-                                 padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
+                                 padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
         back_button = Button(font_size=40, size_hint=(None, None),
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
@@ -493,69 +496,85 @@ class VokabaApp(App):
         self.window.add_widget(top_right)
 
         # Load vocab
+        self.available_modes = ["front_back", "back_front"]
         all_vocab = []
-        self.all_vocab_list = []  # Saving for later
+        self.all_vocab_list = []
         self.is_back = False
         self.current_vocab_index = 0
 
-        for i in os.listdir("vocab/"):
-            file = save.load_vocab("vocab/" + i)
-            if isinstance(file, tuple):
-                file = file[0]
-            all_vocab.append(file)
+        if stack:
+            file = save.load_vocab("vocab/"+stack)
+            if isinstance(file, tuple): file = file[0]
+            for i in file:
+                all_vocab.append(file)
+        else:
+            for i in os.listdir("vocab/"):
+                file = save.load_vocab("vocab/" + i)
+                if isinstance(file, tuple):
+                    file = file[0]
+                all_vocab.append(file)
+
 
         for i in all_vocab:
             for j in i:
                 self.all_vocab_list.append(j)
-                random.shuffle(self.all_vocab_list)
+        random.shuffle(self.all_vocab_list)
 
         self.max_current_vocab_index = len(self.all_vocab_list)
 
-        # Erste Vokabel anzeigen (Vorderseite)
-        current_vocab = self.all_vocab_list[self.current_vocab_index]
-        front_text = current_vocab["own_language"]
+        self.show_current_card()
 
+    def show_current_card(self):
+        """Wählt die Anzeige je nach Lernmodus"""
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        if self.learn_mode == "front_back":
+            text = current_vocab["own_language"] if not self.is_back else self._format_backside(current_vocab)
+            self.show_button_card(text, self.flip_card_learn_func)
+
+        elif self.learn_mode == "back_front":
+            text = current_vocab["foreign_language"] if not self.is_back else current_vocab["own_language"]
+            self.show_button_card(text, self.flip_card_learn_func)
+
+        else:
+            log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
+            self.learn(None, "front_back")
+
+    def show_button_card(self, text, callback):
         center_center = AnchorLayout(anchor_x="center", anchor_y="center",
-                                     padding=30*float(config["settings"]["gui"]["padding_multiplicator"]))
+                                     padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
         self.front_side_label = Button(
-            text=front_text,
+            text=text,
             font_size=int(config["settings"]["gui"]["title_font_size"]),
             size_hint=(0.6, 0.8)
         )
-        self.front_side_label.bind(on_press=self.flip_card_learn_func)
+        self.front_side_label.bind(on_press=callback)
         center_center.add_widget(self.front_side_label)
         self.window.add_widget(center_center)
 
+    def _format_backside(self, vocab):
+        back = vocab["foreign_language"]
+        additional = vocab["info"]
+        latin = vocab["latin_language"] or None
+        return f"{back}\n\n{additional}\n\n{latin}" if latin else f"{back}\n\n{additional}"
 
     def flip_card_learn_func(self, instance=None):
-        log("flipping vocab card")
-
         if self.is_back:
-            # Back to Front side
+            # Nächste Karte
             if self.current_vocab_index >= self.max_current_vocab_index - 1:
-                self.current_vocab_index = 0
-            else:
-                self.current_vocab_index += 1
+                self.max_current_vocab_index = 0
+                random.shuffle(self.all_vocab_list)
 
-            current_vocab = self.all_vocab_list[self.current_vocab_index]
-            self.front_side_label.text = current_vocab["own_language"]
+            else:   self.current_vocab_index += 1
             self.is_back = False
 
+            # Set random mode
+            self.learn_mode = random.choice(self.available_modes)
+
         else:
-            # Show backside
-
-            current_vocab = self.all_vocab_list[self.current_vocab_index]
-            back = current_vocab["foreign_language"]
-            additional = current_vocab["info"]
-            latin = current_vocab["latin_language"] or None
-
-            # Rückseite zusammensetzen
-            if latin:
-                self.front_side_label.text = back + "\n\n" + additional + "\n\n" + latin
-            else:
-                self.front_side_label.text = back + "\n\n" + additional
-
             self.is_back = True
+
+        self.show_current_card()
 
     def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")
