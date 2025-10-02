@@ -1,5 +1,5 @@
 settings:
   gui:
-    padding_multiplicator: 0.9103514749394782
+    padding_multiplicator: 1.0
     text_font_size: 15
     title_font_size: 30
