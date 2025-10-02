@@ -15,4 +15,4 @@ Der Name setzt sich aus **„Vokabel“** und **„Kaba“** zusammen. Passend d
   - Neben dem klassischen Vokabelpaar können zusätzlich **Beugungen**, **Satzbeispiele** oder **Kontextinformationen** abgefragt werden
 
 ---
-**[Discord:](https://discord.gg/zRRmfgt8Cn)**
+**Für mehr Infos oder rückfragen, komm in den [Discord](https://discord.gg/zRRmfgt8Cn)**
