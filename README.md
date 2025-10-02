@@ -1,6 +1,17 @@
+# Vokaba
 
----------------Vokaba------------
-Vocaba ist eine Vokabellernapp, die Vokabel lernen gamyfiziert ähnlich wie cabuu, mit dem Vorteil komplett gratis zu sein.
-inspiriert du den Namenmix von Vokabel und Kaba ist der Name programm da die app mit einem kaba maskotchen arbeitet.
-Die app wird für Englisch Latein und Französich kompatibel sein und gegen das schauen von wertbung werden diverse Ki dienste 
-Nutzbar sein.besonders erwähnenswert ist das 3 lernspalten prinzip bei dem zu einem vokabelpaar auch beugungen oder sätze abgefragt werden können.
+**Vokaba** ist eine vollständig kostenlose, gamifizierte Vokabeltrainer-App – inspiriert von Plattformen wie *cabuu*, jedoch ohne Bezahlschranken.
+
+Der Name setzt sich aus **„Vokabel“** und **„Kaba“** zusammen. Passend dazu begleitet ein freundliches **Kakaoglas-Maskottchen** die Lernenden durch die App.
+
+---
+
+## ✨ Features
+
+- **Unterstützte Sprachen:** Englisch, Latein und Französisch
+- **Gamifiziertes Lernen** mit Motivationselementen und Fortschrittssystem
+- **KI-gestützte Funktionen**, freischaltbar durch das Anschauen kurzer Werbung
+- **Einzigartiges 3-Spalten-Lernprinzip:**
+  - Neben dem klassischen Vokabelpaar können zusätzlich **Beugungen**, **Satzbeispiele** oder **Kontextinformationen** abgefragt werden
+
+---
