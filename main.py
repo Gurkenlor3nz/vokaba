@@ -71,6 +71,7 @@ class VokabaApp(App):
 
 
     def main_menu(self, instance=None):
+        self.learn(None, "multiple_choice")
         #Window init
         log("opened main menu")
         self.window.clear_widgets()
@@ -143,7 +144,6 @@ class VokabaApp(App):
         learn_button.bind(on_press=lambda instance: self.learn(stack=None))
         bottom_center.add_widget(learn_button)
         self.window.add_widget(bottom_center)
-
 
 
 
@@ -536,6 +536,9 @@ class VokabaApp(App):
             text = current_vocab["foreign_language"] if not self.is_back else current_vocab["own_language"]
             self.show_button_card(text, self.flip_card_learn_func)
 
+        elif self.learn_mode == "multiple_choice":
+            self.multiple_choice()
+
         else:
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
             self.learn(None, "front_back")
@@ -575,6 +578,35 @@ class VokabaApp(App):
             self.is_back = True
 
         self.show_current_card()
+
+    def multiple_choice(self):
+        self.window.clear_widgets()
+        correct_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        four_vocab = []
+
+        four_vocab_indexes = random.sample(range(0, len(self.all_vocab_list)-1), 4)
+        for i in four_vocab_indexes:
+            four_vocab.append(self.all_vocab_list[i])
+
+        while correct_vocab in four_vocab:
+            for j in four_vocab:
+                if j == correct_vocab:
+                    four_vocab[j] = self.all_vocab_list[random.sample(range(0, len(self.all_vocab_list)-1), 1)]
+
+
+        # Back Button
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top",
+                                 padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
+        back_button = Button(font_size=40, size_hint=(None, None),
+                             size=(64, 64), background_normal="assets/back_button.png")
+        back_button.bind(on_press=self.main_menu)
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+
+
+
 
     def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")
