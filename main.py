@@ -540,6 +540,7 @@ class VokabaApp(App):
 
 
     def show_current_card(self):
+        self.window.clear_widgets()
         """Wählt die Anzeige je nach Lernmodus"""
         current_vocab = self.all_vocab_list[self.current_vocab_index]
 
@@ -580,10 +581,10 @@ class VokabaApp(App):
         if self.is_back:
             # Nächste Karte
             if self.current_vocab_index >= self.max_current_vocab_index - 1:
-                self.max_current_vocab_index = 0
+                self.current_vocab_index = 0
                 random.shuffle(self.all_vocab_list)
-
             else:   self.current_vocab_index += 1
+
             self.is_back = False
 
             # Set random mode
@@ -646,6 +647,13 @@ class VokabaApp(App):
                     seen2.add(k)
             answers = tmp
 
+        if not any(
+                a.get("own_language", "") == correct_vocab.get("own_language", "") and
+                a.get("foreign_language", "") == correct_vocab.get("foreign_language", "")
+                for a in answers
+        ):
+            answers.append(correct_vocab)
+
         random.shuffle(answers)
 
         # Scrollbarer Bereich
@@ -687,14 +695,27 @@ class VokabaApp(App):
                 text=str(opt.get('foreign_language', '')),
                 font_size=config["settings"]["gui"]["title_font_size"],
                 size_hint=(1, None),
-                height=100
-            )
+                height=100)
+            btn.bind(on_press=lambda instance, choice=opt: self.multiple_choice_func(correct_vocab, choice, instance))
             form_layout.add_widget(btn)
 
         scroll.add_widget(form_layout)
         self.window.add_widget(scroll)
         self.window.add_widget(top_right)
 
+
+    def multiple_choice_func(self, correct_vocab, button_text, instance=None):
+        if (button_text is correct_vocab) or (
+                button_text.get("own_language", "") == correct_vocab.get("own_language", "") and
+                button_text.get("foreign_language", "") == correct_vocab.get("foreign_language", "")
+        ):
+            if self.current_vocab_index >= self.max_current_vocab_index - 1:
+                self.current_vocab_index = 0
+            else:
+                self.current_vocab_index += 1
+            self.is_back = False
+            self.learn_mode = random.choice(self.available_modes)
+            self.show_current_card()
 
     def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")
