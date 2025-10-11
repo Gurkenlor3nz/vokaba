@@ -71,7 +71,6 @@ class VokabaApp(App):
 
 
     def main_menu(self, instance=None):
-        self.learn(None, "multiple_choice")
         #Window init
         log("opened main menu")
         self.window.clear_widgets()
@@ -461,7 +460,7 @@ class VokabaApp(App):
                 actual_stackname = str(stackname + ".csv")
 
             if not os.path.isfile("vocab/" + actual_stackname):
-                os.mknod("vocab/" + actual_stackname)
+                open("vocab/" + actual_stackname, "a").close()
                 log(f"Created file: {actual_stackname}")
 
                 save.save_to_vocab(
@@ -482,7 +481,7 @@ class VokabaApp(App):
 
     def learn(self, stack=None, mode="front_back", instance=None):
         log(f"entered learn menu with mode={mode}")
-        self.learn_mode = mode  # Speichere den Modus
+        self.learn_mode = mode
 
         self.window.clear_widgets()
 
@@ -495,18 +494,17 @@ class VokabaApp(App):
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
-        # Load vocab
-        self.available_modes = ["front_back", "back_front"]
+        # Lernliste aufbauen (ohne Duplikations-Bug)
         all_vocab = []
         self.all_vocab_list = []
         self.is_back = False
         self.current_vocab_index = 0
 
         if stack:
-            file = save.load_vocab("vocab/"+stack)
-            if isinstance(file, tuple): file = file[0]
-            for i in file:
-                all_vocab.append(file)
+            file = save.load_vocab("vocab/" + stack)
+            if isinstance(file, tuple):
+                file = file[0]
+            all_vocab.append(file)  # nur einmal hinzufügen
         else:
             for i in os.listdir("vocab/"):
                 file = save.load_vocab("vocab/" + i)
@@ -514,15 +512,32 @@ class VokabaApp(App):
                     file = file[0]
                 all_vocab.append(file)
 
+        for vocab_list in all_vocab:
+            for entry in vocab_list:
+                self.all_vocab_list.append(entry)
 
-        for i in all_vocab:
-            for j in i:
-                self.all_vocab_list.append(j)
         random.shuffle(self.all_vocab_list)
-
         self.max_current_vocab_index = len(self.all_vocab_list)
 
+        # Mindest-Check auf leere Liste
+        if self.max_current_vocab_index == 0:
+            log("no vocab to learn")
+            self.window.clear_widgets()
+            msg_anchor = AnchorLayout(anchor_x="center", anchor_y="center")
+            msg_anchor.add_widget(Label(
+                text="Keine Vokabeln vorhanden. Bitte füge zuerst Vokabeln hinzu.",
+                font_size=int(config["settings"]["gui"]["title_font_size"])
+            ))
+            self.window.add_widget(msg_anchor)
+            return
+
+        # Verfügbare Modi – Multiple Choice nur, wenn genug Items
+        self.available_modes = ["front_back", "back_front"]
+        if len(self.all_vocab_list) >= 5:
+            self.available_modes.append("multiple_choice")
+
         self.show_current_card()
+
 
     def show_current_card(self):
         """Wählt die Anzeige je nach Lernmodus"""
@@ -556,9 +571,9 @@ class VokabaApp(App):
         self.window.add_widget(center_center)
 
     def _format_backside(self, vocab):
-        back = vocab["foreign_language"]
-        additional = vocab["info"]
-        latin = vocab["latin_language"] or None
+        back = vocab.get("foreign_language", "")
+        additional = vocab.get("info", "")
+        latin = vocab.get("latin_language")  # None oder ""
         return f"{back}\n\n{additional}\n\n{latin}" if latin else f"{back}\n\n{additional}"
 
     def flip_card_learn_func(self, instance=None):
@@ -581,26 +596,71 @@ class VokabaApp(App):
 
     def multiple_choice(self):
         self.window.clear_widgets()
+
+        if not self.all_vocab_list:
+            log("no vocab -> multiple choice aborted")
+            self.main_menu()
+            return
+
+        # Richtige Antwort
         correct_vocab = self.all_vocab_list[self.current_vocab_index]
 
-        # Neue Logik für four_vocab (4 falsche Antworten)
-        four_vocab = []
+        # Kandidatenpool ohne die richtige (Identität, nicht Gleichheit am Inhalt)
+        pool = [w for w in self.all_vocab_list if w is not correct_vocab]
 
-        # Alle Wörter außer der richtigen Lösung
-        unique_vocab = [word for word in self.all_vocab_list if word != correct_vocab]
-
-        if len(unique_vocab) >= 4:
-            # Ohne Duplikate auffüllen
-            while len(four_vocab) < 4:
-                candidate = random.choice(unique_vocab)
-                if candidate not in four_vocab:
-                    four_vocab.append(candidate)
+        # Falschantworten robust erzeugen (mit/ohne Wiederholungen)
+        wrong = []
+        if len(pool) >= 4:
+            wrong = random.sample(pool, 4)
         else:
-            # Zu wenige Vokabeln → Duplikate erlauben
-            while len(four_vocab) < 4:
-                candidate = random.choice(unique_vocab)
-                four_vocab.append(candidate)
+            # so viele verschiedene wie möglich
+            picked = set()
+            while len(wrong) < min(4, len(pool)):
+                c = random.choice(pool)
+                key = (c.get("own_language", ""), c.get("foreign_language", ""))
+                if key not in picked:
+                    wrong.append(c)
+                    picked.add(key)
+            # auffüllen, falls zu wenig – zur Not mit Duplikaten der richtigen
+            while len(wrong) < 4:
+                wrong.append(correct_vocab)
 
+        # Antworten zusammenstellen, Duplikate am Inhalt vermeiden
+        answers = []
+        seen = set()
+        for cand in wrong + [correct_vocab]:
+            key = (cand.get("own_language", ""), cand.get("foreign_language", ""))
+            if key not in seen:
+                answers.append(cand)
+                seen.add(key)
+
+        # Falls nach Duplikatfilter <2 Optionen übrig, notfalls Pool mischen
+        if len(answers) < 2 and pool:
+            answers.extend(random.sample(pool, min(3, len(pool))))
+            # erneut Duplikate filtern
+            tmp, seen2 = [], set()
+            for a in answers:
+                k = (a.get("own_language", ""), a.get("foreign_language", ""))
+                if k not in seen2:
+                    tmp.append(a);
+                    seen2.add(k)
+            answers = tmp
+
+        random.shuffle(answers)
+
+        # Scrollbarer Bereich
+        scroll = ScrollView(size_hint=(1, 1))
+        form_layout = GridLayout(
+            cols=1, spacing=15,
+            padding=[
+                50 * float(config["settings"]["gui"]["padding_multiplicator"]),
+                80 * float(config["settings"]["gui"]["padding_multiplicator"]),
+                120 * float(config["settings"]["gui"]["padding_multiplicator"]),
+                50 * float(config["settings"]["gui"]["padding_multiplicator"])
+            ],
+            size_hint_y=None
+        )
+        form_layout.bind(minimum_height=form_layout.setter("height"))
 
         # Back Button
         top_right = AnchorLayout(anchor_x="right", anchor_y="top",
@@ -609,9 +669,31 @@ class VokabaApp(App):
                              size=(64, 64), background_normal="assets/back_button.png")
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
+
+        # Aufgabe (Front-Seite)
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top",
+                                  padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
+        front_label = Label(
+            text=correct_vocab.get('own_language', ''),
+            font_size=int(config["settings"]["gui"]["title_font_size"]),
+            size_hint=(None, None), size=(80, 40)
+        )
+        top_center.add_widget(front_label)
+        self.window.add_widget(top_center)
+
+        # Antwortbuttons
+        for opt in answers:
+            btn = Button(
+                text=str(opt.get('foreign_language', '')),
+                font_size=config["settings"]["gui"]["title_font_size"],
+                size_hint=(1, None),
+                height=100
+            )
+            form_layout.add_widget(btn)
+
+        scroll.add_widget(form_layout)
+        self.window.add_widget(scroll)
         self.window.add_widget(top_right)
-
-
 
 
     def add_vocab(self, stack, vocab, instance=None):
@@ -704,9 +786,12 @@ class VokabaApp(App):
                           'latin_language' : add_vocab_third_column,
                           'info' : add_vocab_additional_info})
         else:
-            vocab.append({'own_language' : add_vocab_own_lanauage,
-                          'foreign_language' : add_vocab_foreign_language,
-                          'info' : add_vocab_additional_info})
+            vocab.append({
+                'own_language': add_vocab_own_lanauage,
+                'foreign_language': add_vocab_foreign_language,
+                'latin_language': "",  # <-- neu: leerer Key für Robustheit
+                'info': add_vocab_additional_info
+            })
 
         save.save_to_vocab(vocab, "vocab/"+stack)
         log("added to stack")
@@ -986,12 +1071,10 @@ class VokabaApp(App):
         else:
             three_columns_check=False
 
-
     def on_touch_move(self, touch):
         if self.collide_point(*touch.pos):
             return super().on_touch_move(touch)
         return False
-
 
 
 if __name__ == "__main__":
