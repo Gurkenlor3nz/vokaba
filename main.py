@@ -583,16 +583,23 @@ class VokabaApp(App):
         self.window.clear_widgets()
         correct_vocab = self.all_vocab_list[self.current_vocab_index]
 
+        # Neue Logik für four_vocab (4 falsche Antworten)
         four_vocab = []
 
-        four_vocab_indexes = random.sample(range(0, len(self.all_vocab_list)-1), 4)
-        for i in four_vocab_indexes:
-            four_vocab.append(self.all_vocab_list[i])
+        # Alle Wörter außer der richtigen Lösung
+        unique_vocab = [word for word in self.all_vocab_list if word != correct_vocab]
 
-        while correct_vocab in four_vocab:
-            for j in four_vocab:
-                if j == correct_vocab:
-                    four_vocab[j] = self.all_vocab_list[random.sample(range(0, len(self.all_vocab_list)-1), 1)]
+        if len(unique_vocab) >= 4:
+            # Ohne Duplikate auffüllen
+            while len(four_vocab) < 4:
+                candidate = random.choice(unique_vocab)
+                if candidate not in four_vocab:
+                    four_vocab.append(candidate)
+        else:
+            # Zu wenige Vokabeln → Duplikate erlauben
+            while len(four_vocab) < 4:
+                candidate = random.choice(unique_vocab)
+                four_vocab.append(candidate)
 
 
         # Back Button
@@ -603,7 +610,6 @@ class VokabaApp(App):
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
-
 
 
 
