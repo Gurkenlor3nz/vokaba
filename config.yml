@@ -3,3 +3,7 @@ settings:
     padding_multiplicator: 1.0
     text_font_size: 15
     title_font_size: 30
+  modes:
+    back_front: true
+    front_back: true
+    multiple_choice: true

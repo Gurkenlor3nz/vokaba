@@ -31,3 +31,6 @@ add_vocab_button_text = "Vokabeln hinzufügen"
 edit_metadata_button_text = "Metadaten Bearbeiten"
 edit_vocab_button_text = "Vokabeln Bearbeiten"
 learn_stack_vocab_button_text = "Stapel lernen\n(Karteikarten)"
+learn_flashcards_front_to_back = ("Stapel mit Karteikarten lernen:\nVorderseite -> Hinterseite")
+learn_flashcards_back_to_front = ("Stapel mit Karteikarten lernen:\nHinterseite -> Vorderseite")
+learn_flashcards_multiple_choice = ("Multiple Choice")

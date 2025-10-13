@@ -136,11 +136,12 @@ class VokabaApp(App):
 
 
         #Learn Button
+        self.recompute_available_modes()
         bottom_center = AnchorLayout(anchor_x="center", anchor_y="bottom",
                                      padding=12*float(config["settings"]["gui"]["padding_multiplicator"]))
         learn_button = Button(font_size=40, size_hint=(None, None),
                              size=(200, 100), background_normal="assets/learn_button.png")
-        learn_button.bind(on_press=lambda instance: self.learn(stack=None))
+        learn_button.bind(on_press=lambda instance: self.learn(stack=None, mode=random.choice(self.available_modes)))
         bottom_center.add_widget(learn_button)
         self.window.add_widget(bottom_center)
 
@@ -193,6 +194,52 @@ class VokabaApp(App):
 
             settings_content.add_widget(lbl)
             settings_content.add_widget(slider)
+
+        # --- Abschnitt: Lernmodi ---
+        modes_header_text = getattr(labels, "settings_modes_header", "Lernmodi")
+        header = Label(
+            text=modes_header_text,
+            font_size=config["settings"]["gui"]["title_font_size"],
+            size_hint_y=None, height=80
+        )
+        settings_content.add_widget(header)
+
+        grid = GridLayout(cols=2, size_hint_y=None, row_default_height=50, row_force_default=True, spacing=8)
+        grid.bind(minimum_height=grid.setter("height"))
+
+        def add_mode_row(mode_key, mode_label):
+            current = bool_cast(get_in(config, ["settings", "modes", mode_key], True))
+            lbl = Label(
+                text=mode_label,
+                font_size=config["settings"]["gui"]["text_font_size"],
+                size_hint_y=None, height=50, halign="left", valign="middle"
+            )
+            lbl.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+            cb = CheckBox(active=current, size_hint=(None, None), size=(32, 32))
+            cb.bind(active=self.on_mode_checkbox_changed(["settings", "modes", mode_key]))
+            return lbl, cb
+
+        # front_back
+        l1, c1 = add_mode_row("front_back", labels.learn_flashcards_front_to_back)
+        grid.add_widget(l1);
+        grid.add_widget(c1)
+
+        # back_front
+        l2, c2 = add_mode_row("back_front", labels.learn_flashcards_back_to_front)
+        grid.add_widget(l2);
+        grid.add_widget(c2)
+
+        # multiple_choice (UI-Sperre, wenn <5 Items)
+        vocab_len_in_settings = len(getattr(self, "all_vocab_list", []))
+        l3, c3 = add_mode_row("multiple_choice", labels.learn_flashcards_multiple_choice)
+        if vocab_len_in_settings < 5:
+            c3.disabled = True
+            l3.text += "  [size=12][i](mind. 5 Einträge nötig)[/i][/size]"
+            l3.markup = True
+        grid.add_widget(l3);
+        grid.add_widget(c3)
+
+        settings_content.add_widget(grid)
 
 
         scroll.add_widget(settings_content)
@@ -272,11 +319,11 @@ class VokabaApp(App):
         edit_vocab_button.bind(on_press=lambda instance: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_vocab_button)
 
-
+        self.recompute_available_modes()
         # Learn stack Button
         learn_vocab_button = Button(text=labels.learn_stack_vocab_button_text, size_hint_y=None, height=80,
                                     font_size=config["settings"]["gui"]["text_font_size"])
-        learn_vocab_button.bind(on_press=lambda instance: self.learn(stack))
+        learn_vocab_button.bind(on_press=lambda instance: self.learn(stack, mode=random.choice(self.available_modes)))
         grid.add_widget(learn_vocab_button)
 
 
@@ -485,14 +532,43 @@ class VokabaApp(App):
 
         self.window.clear_widgets()
 
-        # Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top",
-                                 padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
-        back_button = Button(font_size=40, size_hint=(None, None),
-                             size=(64, 64), background_normal="assets/back_button.png")
+        # ==== Rahmen-Container (bleibt stabil): ====
+        # Hauptbereich für den Screen
+        self.learn_area = FloatLayout()  # FloatLayout = bequemes Überlagern
+        self.window.add_widget(self.learn_area)
+
+        # Content-Bereich (dieser wird bei jedem Screen geleert/neu befüllt)
+        self.learn_content = AnchorLayout(
+            anchor_x="center", anchor_y="center",
+            padding=30 * float(config["settings"]["gui"]["padding_multiplicator"])
+        )
+        self.learn_area.add_widget(self.learn_content)
+
+        # Header (Überschrift oben zentriert)
+        self.header_anchor = AnchorLayout(
+            anchor_x="center", anchor_y="top",
+            padding=30 * float(config["settings"]["gui"]["padding_multiplicator"])
+        )
+        self.header_label = Label(
+            text="",
+            font_size=int(config["settings"]["gui"]["title_font_size"]),
+            size_hint=(None, None), size=(80, 40)
+        )
+        self.header_anchor.add_widget(self.header_label)
+        self.learn_area.add_widget(self.header_anchor)
+
+        # Back-Button (rechts oben) – kommt am Ende, damit er in der Z-Order oben liegt
+        top_right = AnchorLayout(
+            anchor_x="right", anchor_y="top",
+            padding=30 * float(config["settings"]["gui"]["padding_multiplicator"])
+        )
+        back_button = Button(
+            font_size=40, size_hint=(None, None),
+            size=(64, 64), background_normal="assets/back_button.png"
+        )
         back_button.bind(on_press=self.main_menu)
         top_right.add_widget(back_button)
-        self.window.add_widget(top_right)
+        self.learn_area.add_widget(top_right)
 
         # Lernliste aufbauen (ohne Duplikations-Bug)
         all_vocab = []
@@ -532,15 +608,13 @@ class VokabaApp(App):
             return
 
         # Verfügbare Modi – Multiple Choice nur, wenn genug Items
-        self.available_modes = ["front_back", "back_front"]
-        if len(self.all_vocab_list) >= 5:
-            self.available_modes.append("multiple_choice")
+        self.recompute_available_modes()
 
         self.show_current_card()
 
 
     def show_current_card(self):
-        self.window.clear_widgets()
+        self.learn_content.clear_widgets()
         """Wählt die Anzeige je nach Lernmodus"""
         current_vocab = self.all_vocab_list[self.current_vocab_index]
 
@@ -560,6 +634,11 @@ class VokabaApp(App):
             self.learn(None, "front_back")
 
     def show_button_card(self, text, callback):
+
+        # Header leeren, damit keine alte MC-Überschrift stehen bleibt
+        if hasattr(self, "header_label"):
+            self.header_label.text = ""
+
         center_center = AnchorLayout(anchor_x="center", anchor_y="center",
                                      padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
         self.front_side_label = Button(
@@ -569,7 +648,7 @@ class VokabaApp(App):
         )
         self.front_side_label.bind(on_press=callback)
         center_center.add_widget(self.front_side_label)
-        self.window.add_widget(center_center)
+        self.learn_content.add_widget(center_center)
 
     def _format_backside(self, vocab):
         back = vocab.get("foreign_language", "")
@@ -596,7 +675,7 @@ class VokabaApp(App):
         self.show_current_card()
 
     def multiple_choice(self):
-        self.window.clear_widgets()
+        self.learn_content.clear_widgets()
 
         if not self.all_vocab_list:
             log("no vocab -> multiple choice aborted")
@@ -670,24 +749,9 @@ class VokabaApp(App):
         )
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
-        # Back Button
-        top_right = AnchorLayout(anchor_x="right", anchor_y="top",
-                                 padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
-        back_button = Button(font_size=40, size_hint=(None, None),
-                             size=(64, 64), background_normal="assets/back_button.png")
-        back_button.bind(on_press=self.main_menu)
-        top_right.add_widget(back_button)
-
-        # Aufgabe (Front-Seite)
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top",
-                                  padding=30 * float(config["settings"]["gui"]["padding_multiplicator"]))
-        front_label = Label(
-            text=correct_vocab.get('own_language', ''),
-            font_size=int(config["settings"]["gui"]["title_font_size"]),
-            size_hint=(None, None), size=(80, 40)
-        )
-        top_center.add_widget(front_label)
-        self.window.add_widget(top_center)
+        # Neue Überschrift setzen (wird beim nächsten Screen automatisch überschrieben/geleert)
+        if hasattr(self, "header_label"):
+            self.header_label.text = correct_vocab.get('own_language', '')
 
         # Antwortbuttons
         for opt in answers:
@@ -700,8 +764,7 @@ class VokabaApp(App):
             form_layout.add_widget(btn)
 
         scroll.add_widget(form_layout)
-        self.window.add_widget(scroll)
-        self.window.add_widget(top_right)
+        self.learn_content.add_widget(scroll)
 
 
     def multiple_choice_func(self, correct_vocab, button_text, instance=None):
@@ -1096,6 +1159,67 @@ class VokabaApp(App):
         if self.collide_point(*touch.pos):
             return super().on_touch_move(touch)
         return False
+
+    def recompute_available_modes(self):
+        """ baut self.available_modes anhand der config + Anzahl Vokabeln """
+        global config
+
+        # Sicherstellen, dass die Struktur existiert
+        if get_in(config, ["settings", "modes"]) is None:
+            set_in(config, ["settings", "modes"], {
+                "front_back": True,
+                "back_front": True,
+                "multiple_choice": True,
+            })
+            save.save_settings(config)
+
+        modes_cfg = get_in(config, ["settings", "modes"], {}) or {}
+
+        # Falls all_vocab_list noch nicht existiert, leere Liste annehmen
+        vocab_len = len(getattr(self, "all_vocab_list", []))
+
+        self.available_modes = []
+        if bool_cast(modes_cfg.get("front_back", True)):
+            self.available_modes.append("front_back")
+        if bool_cast(modes_cfg.get("back_front", True)):
+            self.available_modes.append("back_front")
+        if bool_cast(modes_cfg.get("multiple_choice", True)) and vocab_len >= 5:
+            self.available_modes.append("multiple_choice")
+
+    def on_mode_checkbox_changed(self, path):
+        """ Factory: gibt einen Handler zurück, der config schreibt + neu berechnet """
+
+        def _handler(instance, value):
+            global config
+            set_in(config, path, bool(value))
+            save.save_settings(config)
+            self.recompute_available_modes()
+
+        return _handler
+
+
+# NICHT IN KLASSE
+def get_in(dct, path, default=None):
+    cur = dct
+    for k in path:
+        if not isinstance(cur, dict) or k not in cur:
+            return default
+        cur = cur[k]
+    return cur
+
+def set_in(dct, path, value):
+    cur = dct
+    for k in path[:-1]:
+        if k not in cur or not isinstance(cur[k], dict):
+            cur[k] = {}
+        cur = cur[k]
+    cur[path[-1]] = value
+
+def bool_cast(v):
+    if isinstance(v, bool): return v
+    if isinstance(v, (int, float)): return bool(v)
+    if isinstance(v, str): return v.strip().lower() in ("1","true","yes","y","on")
+    return bool(v)
 
 
 if __name__ == "__main__":
