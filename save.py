@@ -12,7 +12,7 @@ def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch", 
         # jetzt 4 Spalten (latein optional)
         writer = csv.DictWriter(
             f,
-            fieldnames=["own_language", "foreign_language", "latin_language", "info"]
+            fieldnames=["own_language", "foreign_language", "latin_language", "info", "learn_level"]
         )
         writer.writeheader()
 
@@ -21,6 +21,8 @@ def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch", 
                 row["latin_language"] = ""
             if "info" not in row:
                 row["info"] = ""
+            if "learn_level" not in row or row["learn_level"] == "":
+                row["learn_level"] = "0"
             writer.writerow(row)
 
 

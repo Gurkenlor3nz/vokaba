@@ -1,8 +1,8 @@
 settings:
   gui:
-    padding_multiplicator: 1.0
-    text_font_size: 15
-    title_font_size: 30
+    padding_multiplicator: 1.1866318946705168
+    text_font_size: 14
+    title_font_size: 31
   modes:
     back_front: true
     front_back: true

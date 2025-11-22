@@ -1,6 +1,5 @@
 ---PC---
-GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
-Abfrage mit Richtung
+Präsentierbar machen, animationen, abgerundete ecken, schönere Farben
 Anki-kompatiblität überprüfen
 Ordner, Sprachen
 TTS mit sprache, die irgendwie im csv ist. 
@@ -29,5 +28,4 @@ evtl
 
 
 Sofort:
-Einstellungen, welche lernmodi funktionieren sollen
 Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
