@@ -19,14 +19,21 @@ Andriod app (vllt. Buildozer)
 Timer 
 zeit pro vokabel
 
-meory(umgedekt derkt sich auf bei falsch wieder zu bei richtig gehts auf fertig stapel)
-Zuordnen 2mal 4 grid  a muss a b muss zu b
-auswählöen 1 plus 4mal1 grid eine vokabel 4 auswahlmöglichkeiten
-übersetzung aufschreiben max 1 tippfehler
-buchstaben gitter-- eine wortlinie malen
-buchstabensuppe-- ein wort angeln
-silben ordnung
-buchstabenordnung
+punkte system 0-100% Ziel: 30/Tag
+
+Übung I
+-0.1/Tag
+1=+0.1
+0=-0.05
+Übung II
+-0.05/Tag
+1=0.05
+0=0.05
+ÜbungIII
+-0.01/Tag
+1=0.04
+0=0.08
+
 
 
 Sofort:
