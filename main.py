@@ -50,6 +50,7 @@ APP_COLORS = {
     "muted":       (0.75, 0.75, 0.80, 1),         # Grauer Text
     "card":        (0.16, 0.17, 0.23, 1),         # Karten
     "danger":      (0.90, 0.22, 0.21, 1),         # Rot (löschen)
+    "success": (0.20, 0.70, 0.30, 1),             # Grün (richtig)
 }
 
 
@@ -973,6 +974,22 @@ class VokabaApp(App):
         latin = vocab.get("latin_language")  # None oder ""
         return f"{back}\n\n{additional}\n\n{latin}" if latin else f"{back}\n\n{additional}"
 
+
+    def _scramble_word(self, word: str) -> str:
+        """Gibt einen durchgemischten String zurück, möglichst nicht identisch zum Original."""
+        letters = list(word)
+        if len(letters) <= 1:
+            return word
+
+        for _ in range(20):
+            random.shuffle(letters)
+            scrambled = "".join(letters)
+            if scrambled != word:
+                return scrambled
+        return "".join(letters)
+
+
+
     def flip_card_learn_func(self, instance=None):
         if self.is_back:
             # Nächste Karte
@@ -1077,7 +1094,6 @@ class VokabaApp(App):
         self.learn_content.add_widget(scroll)
 
 
-
     def multiple_choice_func(self, correct_vocab, button_text, instance=None):
         if (button_text is correct_vocab) or (
                 button_text.get("own_language", "") == correct_vocab.get("own_language", "") and
@@ -1090,6 +1106,224 @@ class VokabaApp(App):
             self.is_back = False
             self.learn_mode = random.choice(self.available_modes)
             self.show_current_card()
+
+
+    def letter_salad(self):
+        # Inhalt in der Mitte leeren
+        self.learn_content.clear_widgets()
+
+        if not self.all_vocab_list:
+            log("no vocab -> letter_salad aborted")
+            self.main_menu()
+            return
+
+        correct_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        # Header oben: Vorderseite anzeigen (wie multiple_choice)
+        if hasattr(self, "header_label"):
+            self.header_label.text = correct_vocab.get("own_language", "")
+
+        # Rohes Zielwort (Fremdsprache)
+        raw_target = (correct_vocab.get("foreign_language", "") or "").strip()
+
+        # ---- Zielwort säubern: Leerzeichen & Inhalt in Klammern ignorieren ----
+        cleaned_chars = []
+        in_parens = False
+        for ch in raw_target:
+            if ch == "(":
+                in_parens = True
+                continue
+            if ch == ")":
+                in_parens = False
+                continue
+            if in_parens:
+                continue
+            if ch.isspace():
+                continue
+            cleaned_chars.append(ch)
+
+        target_clean = "".join(cleaned_chars)
+
+        if not target_clean:
+            log(f"letter_salad: cleaned target empty for '{raw_target}', skipping to next mode")
+            # Wenn nichts Sinnvolles übrig ist -> einfach andere Anzeige nehmen
+            self.learn_mode = random.choice([m for m in self.available_modes if m != "letter_salad"] or self.available_modes)
+            self.show_current_card()
+            return
+
+        # Buchstaben-Liste & Scramble
+        letters = list(target_clean)
+        scrambled_letters = letters[:]
+        random.shuffle(scrambled_letters)
+
+        # State für diesen Durchgang merken
+        self.letter_salad_target_raw = raw_target
+        self.letter_salad_target_clean = target_clean
+        self.letter_salad_progress = 0              # nächste erwartete Position im *cleanen* Wort
+        self.letter_salad_typed = ""                # bisher korrekt gebautes Wort
+        self.letter_salad_buttons = []
+
+        # Layout Mitte
+        center = AnchorLayout(
+            anchor_x="center", anchor_y="center",
+            padding=30 * float(config["settings"]["gui"]["padding_multiplicator"])
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.85, 0.55),
+            padding=dp(16),
+            spacing=dp(12)
+        )
+
+        # 1) Anleitung
+        instruction = self.make_text_label(
+            getattr(labels, "letter_salad_instruction",
+                    labels.letter_salad_instruction),
+            size_hint_y=None,
+            height=dp(30)
+        )
+        card.add_widget(instruction)
+
+        # 2) Progress-Label: bisher zusammengesetztes Wort
+        self.letter_salad_progress_label = self.make_title_label(
+            "",  # startet leer
+            size_hint_y=None,
+            height=dp(40)
+        )
+        card.add_widget(self.letter_salad_progress_label)
+
+        # 3) Grid für Buchstaben-Kacheln
+        cols = max(1, min(len(scrambled_letters), 10))
+        letters_layout = GridLayout(
+            cols=cols,
+            spacing=dp(8),
+            size_hint_y=None,
+            height=dp(70)
+        )
+
+        for ch in scrambled_letters:
+            btn = RoundedButton(
+                text=ch,
+                bg_color=APP_COLORS["card"],        # Start: grau
+                color=APP_COLORS["text"],           # Schrift: weiß
+                font_size=int(config["settings"]["gui"]["title_font_size"]),
+                size_hint=(None, None),
+                size=(dp(56), dp(56))               # ca. quadratisch
+            )
+            # Klick-Handler
+            btn.bind(on_press=self.letter_salad_letter_pressed)
+            self.letter_salad_buttons.append(btn)
+            letters_layout.add_widget(btn)
+
+        card.add_widget(letters_layout)
+
+        # 4) Button-Reihe: überspringen / neu mischen
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(12)
+        )
+
+        skip_text = getattr(labels, "letter_salad_skip", "Überspringen")
+        reshuffle_text = getattr(labels, "letter_salad_reshuffle", "Neu mischen")
+
+        skip_btn = self.make_secondary_button(
+            skip_text,
+            size_hint=(0.5, 1)
+        )
+        skip_btn.bind(on_press=self.letter_salad_skip)
+
+        reshuffle_btn = self.make_secondary_button(
+            reshuffle_text,
+            size_hint=(0.5, 1)
+        )
+        reshuffle_btn.bind(on_press=lambda inst: self.letter_salad())
+
+        btn_row.add_widget(skip_btn)
+        btn_row.add_widget(reshuffle_btn)
+
+        card.add_widget(btn_row)
+
+        center.add_widget(card)
+        self.learn_content.add_widget(center)
+
+
+    def letter_salad_letter_pressed(self, button, instance=None):
+        """Wird aufgerufen, wenn ein Buchstaben-Button geklickt wird."""
+        target = getattr(self, "letter_salad_target_clean", "")
+        progress = getattr(self, "letter_salad_progress", 0)
+
+        if not target:
+            return
+
+        # Wenn Wort schon komplett ist, Klicks ignorieren
+        if progress >= len(target):
+            return
+
+        expected_char = target[progress]
+        clicked_char = (button.text or "").strip()
+
+        # Falls Button schon deaktiviert (bereits korrekt verwendet)
+        if button.disabled:
+            return
+
+        if clicked_char == expected_char:
+            # RICHTIGER nächster Buchstabe
+            button.set_bg_color(APP_COLORS["success"])
+            button.color = APP_COLORS["text"]       # Schrift sicher weiß
+            button.disabled = True
+
+            # Fortschritt hochzählen
+            self.letter_salad_progress = progress + 1
+
+            # Getipptes Wort im Label aktualisieren
+            typed = getattr(self, "letter_salad_typed", "")
+            typed += clicked_char
+            self.letter_salad_typed = typed
+            if hasattr(self, "letter_salad_progress_label"):
+                self.letter_salad_progress_label.text = typed
+
+            # Vollständiges Wort korrekt geklickt?
+            if self.letter_salad_progress >= len(target):
+                # kleinen Delay für Feedback, dann nächste Karte
+                Clock.schedule_once(lambda dt: self._letter_salad_finish(), 0.3)
+
+        else:
+            # FALSCH -> kurz rot, dann wieder grau
+            button.set_bg_color(APP_COLORS["danger"])
+            button.color = APP_COLORS["text"]  # Schrift bleibt weiß
+            Clock.schedule_once(
+                lambda dt, b=button: (b.set_bg_color(APP_COLORS["card"]), setattr(b, "color", APP_COLORS["text"])),
+                0.25
+            )
+
+
+    def _letter_salad_finish(self):
+        """Nach korrekt getipptem Wort: zur nächsten Vokabel & Modus wechseln."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        # Nächsten Modus zufällig wählen, wie bei multiple_choice
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
+
+    def letter_salad_skip(self, instance=None):
+        """Überspringt die aktuelle Vokabel im Buchstabensalat-Modus."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
 
     def add_vocab(self, stack, vocab, instance=None):
         log("entered add vocab")

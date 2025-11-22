@@ -1,4 +1,4 @@
-w"""Variables"""
+"""Variables"""
 vocab_path = "vocab/"
 
 
@@ -35,3 +35,4 @@ learn_flashcards_front_to_back = ("Stapel mit Karteikarten lernen:\nVorderseite 
 learn_flashcards_back_to_front = ("Stapel mit Karteikarten lernen:\nHinterseite -> Vorderseite")
 learn_flashcards_multiple_choice = ("Multiple Choice")
 learn_flashcards_letter_salad = ("Buchstaben Salat")
+letter_salad_instruction = "Tippe die Buchstaben in der richtigen reihenfolge an."
