@@ -1,9 +1,9 @@
-"""Variables"""
+w"""Variables"""
 vocab_path = "vocab/"
 
 
 """Texte"""
-welcome_text = "Willkommen bei Vokaba"
+welcome_text = "Fick dich du Hurensohn"
 settings_title_text = "Settings"
 settings_title_font_size_slider = "Titelgröße anpassen"
 settings_font_size_slider = "Textgröße anpassen"
