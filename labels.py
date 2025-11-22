@@ -34,3 +34,4 @@ learn_stack_vocab_button_text = "Stapel lernen\n(Karteikarten)"
 learn_flashcards_front_to_back = ("Stapel mit Karteikarten lernen:\nVorderseite -> Hinterseite")
 learn_flashcards_back_to_front = ("Stapel mit Karteikarten lernen:\nHinterseite -> Vorderseite")
 learn_flashcards_multiple_choice = ("Multiple Choice")
+learn_flashcards_letter_salad = ("Buchstaben Salat")

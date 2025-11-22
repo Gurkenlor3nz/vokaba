@@ -433,12 +433,11 @@ class VokabaApp(App):
 
         # --- Lernmodi ---
         modes_header_text = getattr(labels, "settings_modes_header", "Lernmodi")
-        header = self.make_title_label(
+
+        settings_content.add_widget(self.make_title_label(
             modes_header_text,
             size_hint_y=None,
-            height=dp(50)
-        )
-        settings_content.add_widget(header)
+            height=dp(120 * float(config["settings"]["gui"]["padding_multiplicator"]))))
 
         modes_card = RoundedCard(
             orientation="vertical",
@@ -481,6 +480,11 @@ class VokabaApp(App):
             c3.disabled = True
             l3.text += "  [size=12][i](mind. 5 Einträge nötig)[/i][/size]"
             l3.markup = True
+        grid.add_widget(l3);
+        grid.add_widget(c3)
+
+        # letter salad
+        l3, c3, = add_mode_row("letter_salad", labels.learn_flashcards_letter_salad)
         grid.add_widget(l3);
         grid.add_widget(c3)
 
@@ -935,6 +939,9 @@ class VokabaApp(App):
 
         elif self.learn_mode == "multiple_choice":
             self.multiple_choice()
+
+        elif self.learn_mode == "letter_salad":
+            self.letter_salad()
 
         else:
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
@@ -1496,6 +1503,7 @@ class VokabaApp(App):
                 "front_back": True,
                 "back_front": True,
                 "multiple_choice": True,
+                "letter_salad": True,
             })
             save.save_settings(config)
 
@@ -1511,6 +1519,9 @@ class VokabaApp(App):
             self.available_modes.append("back_front")
         if bool_cast(modes_cfg.get("multiple_choice", True)) and vocab_len >= 5:
             self.available_modes.append("multiple_choice")
+        if bool_cast(modes_cfg.get("letter_salad", True)):
+            self.available_modes.append("letter_salad")
+
 
     def on_mode_checkbox_changed(self, path):
         """ Factory: gibt einen Handler zurück, der config schreibt + neu berechnet """

@@ -6,4 +6,5 @@ settings:
   modes:
     back_front: true
     front_back: true
+    letter_salad: true
     multiple_choice: true
