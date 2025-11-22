@@ -25,9 +25,46 @@ auswählöen 1 plus 4mal1 grid eine vokabel 4 auswahlmöglichkeiten
 übersetzung aufschreiben max 1 tippfehler
 buchstaben gitter-- eine wortlinie malen
 buchstabensuppe-- ein wort angeln
-evtl
+silben ordnung
+buchstabenordnung
 
 
 Sofort:
-Einstellungen, welche lernmodi funktionieren sollen
+
 Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
+
+ÜBUNGEN I <0.3
+Karteikarte Hint
+karteikarte Bewerten
+Multiple choice 4
+zuordnen
+
+ÜBUNGEN II0.3<>0.8
+Buchstabensalat
+buchstabensuppe
+Silben
+Karteikarte bewerten
+Multiple choice
+Buchstabengitter
+Zuordnen
+
+
+ÜBUNGENIII
+Schreiben
+Buchstabengitter
+Buchstabensalat
+buchstabensuppe
+Silben
+
+
+
+
+
+
+
+
+
+
+
+
+
