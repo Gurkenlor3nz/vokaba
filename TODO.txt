@@ -47,11 +47,11 @@ Multiple choice 4
 zuordnen
 
 ÜBUNGEN II0.3<>0.8
-Buchstabensalat
+×Buchstabensalat
 buchstabensuppe
 Silben
 Karteikarte bewerten
-Multiple choice
+×Multiple choice
 Buchstabengitter
 Zuordnen
 
@@ -59,7 +59,7 @@ Zuordnen
 ÜBUNGENIII
 Schreiben
 Buchstabengitter
-Buchstabensalat
+×Buchstabensalat
 buchstabensuppe
 Silben
 
