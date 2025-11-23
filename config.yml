@@ -5,6 +5,7 @@ settings:
     title_font_size: 34
   modes:
     back_front: true
+    connect_pairs: true
     front_back: true
     letter_salad: true
     multiple_choice: true

@@ -8,10 +8,10 @@ vocab_path = "vocab/"
 # Main / generic UI
 # ---------------------------------------------------------------------------
 
-welcome_text = "Willkommen bei Vokaba"
+welcome_text = "Vokaba"
 save = "Speichern"
 cancel = "Abbrechen"
-delete = "[color=ff0000]löschen[/color]"
+delete = "löschen"
 caution = "[color=ff0000]ACHTUNG[/color]"
 cant_be_undone = "[color=ff0000]Dies kann nicht rückgängig gemacht werden![/color]"
 
@@ -76,6 +76,7 @@ learn_flashcards_back_to_front = (
 learn_flashcards_multiple_choice = "Multiple Choice"
 learn_flashcards_letter_salad = "Buchstaben Salat"
 learn_flashcards_connect_pairs = "Wörter Verbinden"
+learn_flashcards_typing_mode = "Übersetzung Eingeben"
 
 no_vocab_warning = "Keine Vokabeln vorhanden. Bitte füge zuerst Vokabeln hinzu."
 

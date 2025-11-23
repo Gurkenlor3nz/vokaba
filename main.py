@@ -5,6 +5,8 @@ from datetime import datetime
 import os
 import os.path
 import random
+import re
+import unicodedata
 
 # Third-party imports
 import yaml
@@ -316,7 +318,7 @@ class VokabaApp(App):
         vokaba_logo = self.make_icon_button(
             "assets/vokaba_logo.png",
             on_press=self.settings,
-            size=dp(72),
+            size=dp(104),
         )
         top_left.add_widget(vokaba_logo)
         self.window.add_widget(top_left)
@@ -528,13 +530,12 @@ class VokabaApp(App):
             settings_content.add_widget(row_card)
 
 
-
         # Learning mode toggles
         modes_header_text = getattr(labels, "settings_modes_header")
 
         settings_content.add_widget(
             self.make_title_label(
-                modes_header_text,
+                modes_header_text + "\n\n\n",
                 size_hint_y=None,
                 height=dp(
                     300
@@ -634,6 +635,24 @@ class VokabaApp(App):
             l5.markup = True
         grid.add_widget(l5)
         grid.add_widget(c5)
+
+
+        # typing input mode (Eingabe-Modus)
+        typing_label_text = getattr(
+            labels, "learn_flashcards_typing_mode",
+        )
+        l6, c6 = add_mode_row("typing", typing_label_text)
+        grid.add_widget(l6)
+        grid.add_widget(c6)
+
+        # connect 5 pairs
+        l5, c5 = add_mode_row(
+            "connect_pairs",
+            getattr(
+                labels,
+                "learn_flashcards_connect_pairs",
+            ),
+        )
 
         modes_card.add_widget(grid)
         settings_content.add_widget(modes_card)
@@ -1215,6 +1234,9 @@ class VokabaApp(App):
         elif self.learn_mode == "connect_pairs":
             self.connect_pairs_mode()
 
+        elif self.learn_mode == "typing":
+            self.typing_mode()
+
         else:
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
             self.learn(None, "front_back")
@@ -1266,6 +1288,175 @@ class VokabaApp(App):
             if scrambled != word:
                 return scrambled
         return "".join(letters)
+
+    def _strip_accents(self, ch: str) -> str:
+        """Gibt den Buchstaben ohne Akzente zurück (é -> e)."""
+        decomposed = unicodedata.normalize("NFD", ch)
+        return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+    def _remove_parenthetical(self, text: str) -> str:
+        """Entfernt alles in Klammern inkl. der Klammern."""
+        if not text:
+            return ""
+        result = []
+        in_parens = False
+        for ch in text:
+            if ch == "(":
+                in_parens = True
+                continue
+            if ch == ")":
+                in_parens = False
+                continue
+            if in_parens:
+                continue
+            result.append(ch)
+        return "".join(result)
+
+    def _normalize_for_compare(self, text: str) -> str:
+        """
+        Normalisiert Text für den inhaltlichen Vergleich:
+        - entfernt Klammern + Inhalt
+        - ignoriert alles außer Buchstaben
+        - entfernt Akzente, vergleicht in lowercase
+        """
+        if not text:
+            return ""
+        no_par = self._remove_parenthetical(text)
+        letters = []
+        for ch in no_par:
+            if ch.isalpha():
+                base = self._strip_accents(ch).lower()
+                letters.append(base)
+        return "".join(letters)
+
+    def _extract_main_lexeme(self, text: str) -> str:
+        """
+        Extrahiert das 'Hauptwort' aus einem Wörterbucheintrag.
+        Beispiele:
+            '(to) walk' -> 'walk'
+            'to walk'   -> 'walk'
+        """
+        if not text:
+            return ""
+        no_par = self._remove_parenthetical(text)
+        parts = no_par.strip().split()
+        if not parts:
+            return no_par.strip()
+        # einfache Heuristik: letztes Wort
+        return parts[-1]
+
+    def _letters_outside_parentheses(self, text: str):
+        """
+        Liefert eine Liste (index, char) für Buchstaben, die NICHT in Klammern stehen.
+        """
+        letters = []
+        in_parens = False
+        for idx, ch in enumerate(text):
+            if ch == "(":
+                in_parens = True
+                continue
+            if ch == ")":
+                in_parens = False
+                continue
+            if in_parens:
+                continue
+            if ch.isalpha():
+                letters.append((idx, ch))
+        return letters
+
+    def _is_correct_typed_answer(self, typed: str, vocab: dict) -> bool:
+        """
+        Prüft, ob die getippte Antwort inhaltlich richtig ist:
+        - ignoriert Akzente, Leerzeichen, Satzzeichen, Klammern
+        - mehrere Lösungen getrennt durch ; , / sind erlaubt
+        - akzeptiert sowohl den kompletten Eintrag als auch das Hauptwort
+          (z.B. 'walk' ist korrekt für '(to) walk' oder 'to walk')
+        """
+        foreign = vocab.get("foreign_language", "") or ""
+        parts = re.split(r"[;,/]", foreign)
+        candidates = [p for p in parts if p.strip()] or [foreign]
+
+        typed_norm = self._normalize_for_compare(typed)
+        if not typed_norm:
+            return False
+
+        for cand in candidates:
+            cand_norm_full = self._normalize_for_compare(cand)
+            cand_main = self._extract_main_lexeme(cand)
+            cand_norm_main = self._normalize_for_compare(cand_main)
+
+            if typed_norm == cand_norm_full or typed_norm == cand_norm_main:
+                return True
+
+        return False
+
+    def _classify_typed_vs_solution(self, solution_text: str, user_text: str):
+        """
+        Vergleicht nur Buchstaben außerhalb von Klammern.
+
+        Rückgabe:
+            user_classes: dict index -> "ok" | "accent" | "wrong"
+            sol_classes:  dict index -> "ok" | "accent" | "wrong"
+        """
+        sol_letters = self._letters_outside_parentheses(solution_text)
+        usr_letters = self._letters_outside_parentheses(user_text)
+
+        user_classes = {}
+        sol_classes = {}
+
+        min_len = min(len(sol_letters), len(usr_letters))
+
+        for i in range(min_len):
+            s_idx, s_char = sol_letters[i]
+            u_idx, u_char = usr_letters[i]
+
+            base_s = self._strip_accents(s_char).lower()
+            base_u = self._strip_accents(u_char).lower()
+
+            if base_s == base_u:
+                if s_char.lower() == u_char.lower():
+                    kind = "ok"
+                else:
+                    # gleicher Buchstabe, aber Akzent/Kleinschreibung anders
+                    kind = "accent"
+            else:
+                kind = "wrong"
+
+            user_classes[u_idx] = kind
+            sol_classes[s_idx] = kind
+
+        # zusätzliche Buchstaben in der Eingabe -> falsch
+        for j in range(min_len, len(usr_letters)):
+            u_idx, _ = usr_letters[j]
+            user_classes[u_idx] = "wrong"
+
+        # fehlende Buchstaben in der Eingabe -> im Lösungstext markieren
+        for j in range(min_len, len(sol_letters)):
+            s_idx, _ = sol_letters[j]
+            sol_classes[s_idx] = "wrong"
+
+        return user_classes, sol_classes
+
+    def _colorize_with_classes(self, text: str, classes_by_index):
+        """
+        Färbt nur Buchstaben entsprechend der Klassen ein.
+        Nicht-Buchstaben bleiben unverändert.
+        """
+        result_parts = []
+        for idx, ch in enumerate(text):
+            kind = classes_by_index.get(idx)
+            if kind is None or not ch.isalpha():
+                result_parts.append(ch)
+            else:
+                if kind == "ok":
+                    color = "FFFFFF"   # weiß
+                elif kind == "accent":
+                    color = "FFD700"   # gold/gelb
+                else:
+                    color = "FF5555"   # rot
+                result_parts.append(f"[color=#{color}]{ch}[/color]")
+        return "".join(result_parts)
+
 
     def flip_card_learn_func(self, instance=None):
         """
@@ -1957,6 +2148,239 @@ class VokabaApp(App):
         self.learn_mode = random.choice(self.available_modes)
         self.show_current_card()
 
+
+    # ------------------------------------------------------------------
+    # Typing mode (Übersetzung eintippen)
+    # ------------------------------------------------------------------
+
+    def typing_mode(self):
+        """Mode where the user types the translation manually."""
+        self.learn_content.clear_widgets()
+
+        if not self.all_vocab_list:
+            log("no vocab -> typing_mode aborted")
+            self.main_menu()
+            return
+
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        if hasattr(self, "header_label"):
+            self.header_label.text = ""
+
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=30 * float(
+                config["settings"]["gui"]["padding_multiplicator"]
+            ),
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.85, 0.55),
+            padding=dp(16),
+            spacing=dp(12),
+        )
+
+        # Prompt: own_language oben
+        prompt_lbl = self.make_title_label(
+            current_vocab.get("own_language", ""),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        card.add_widget(prompt_lbl)
+
+        # Anweisung
+        instruction_text = getattr(
+            labels,
+            "typing_mode_instruction",
+            "Gib die passende Übersetzung ein:",
+        )
+        instruction_lbl = self.make_text_label(
+            instruction_text,
+            size_hint_y=None,
+            height=dp(30),
+        )
+        card.add_widget(instruction_lbl)
+
+        # Eingabefeld
+        self.typing_input = self.style_textinput(
+            TextInput(
+                multiline=False,
+                size_hint=(1, None),
+                height=dp(48),
+            )
+        )
+        self.typing_input.bind(on_text_validate=self.typing_check_answer)
+        card.add_widget(self.typing_input)
+
+        # Feedback-Label
+        self.typing_feedback_label = self.make_text_label(
+            "",
+            size_hint_y=None,
+            height=dp(80),
+        )
+        self.typing_feedback_label.markup = True  # wichtig für [color]-Tags
+        card.add_widget(self.typing_feedback_label)
+
+        # Buttons: Überprüfen / Überspringen
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(12),
+        )
+
+        check_text = getattr(
+            labels,
+            "typing_mode_check",
+            "Überprüfen",
+        )
+        skip_text = getattr(
+            labels,
+            "typing_mode_skip",
+            getattr(labels, "letter_salad_skip", "Überspringen"),
+        )
+
+        check_btn = self.make_primary_button(
+            check_text,
+            size_hint=(0.5, 1),
+        )
+        check_btn.bind(on_press=self.typing_check_answer)
+
+        skip_btn = self.make_secondary_button(
+            skip_text,
+            size_hint=(0.5, 1),
+        )
+        skip_btn.bind(on_press=self.typing_skip)
+
+        btn_row.add_widget(check_btn)
+        btn_row.add_widget(skip_btn)
+
+        card.add_widget(btn_row)
+
+        center.add_widget(card)
+        self.learn_content.add_widget(center)
+
+        # Fokus gleich ins Eingabefeld
+        Clock.schedule_once(lambda dt: setattr(self.typing_input, "focus", True), 0.05)
+
+    def typing_check_answer(self, instance=None):
+        """Check die Eingabe, färbt Buchstaben ein und geht ggf. weiter."""
+        if not hasattr(self, "typing_input"):
+            return
+
+        if not self.all_vocab_list:
+            return
+
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+        user_input = self.typing_input.text or ""
+
+        if not user_input.strip():
+            self.typing_feedback_label.color = APP_COLORS["muted"]
+            empty_text = getattr(
+                labels,
+                "typing_mode_empty",
+                "Bitte gib eine Antwort ein.",
+            )
+            self.typing_feedback_label.text = empty_text
+            return
+
+        # Original-Lösung (nur der Teil vor der ersten Klammer ist relevant)
+        # Original-Lösung: Hauptwort extrahieren (z.B. '(to) walk' -> 'walk')
+        foreign_full = current_vocab.get("foreign_language", "") or ""
+        solution_main = self._extract_main_lexeme(foreign_full)
+
+        # Klassifikation + farbiges Rendering
+        user_classes, sol_classes = self._classify_typed_vs_solution(
+            solution_main, user_input
+        )
+        colored_user = self._colorize_with_classes(user_input, user_classes)
+        colored_solution = self._colorize_with_classes(
+            solution_main, sol_classes
+        )
+
+        # Korrektheit (ohne Akzente, ohne Formatierungszeichen, Klammern optional)
+        is_correct = self._is_correct_typed_answer(user_input, current_vocab)
+        has_accent_issue = any(v == "accent" for v in user_classes.values())
+
+
+        self.typing_feedback_label.markup = True
+
+        if is_correct:
+            # Antwort inhaltlich korrekt; Akzentfehler werden nur gelb markiert
+            self.typing_feedback_label.color = APP_COLORS["success"]
+
+            if has_accent_issue:
+                success_text = getattr(
+                    labels,
+                    "typing_mode_correct_with_accents",
+                    "Richtig (Akzente beachten):",
+                )
+                self.typing_feedback_label.text = (
+                    f"{success_text}\n"
+                    f"[b]Deine Eingabe:[/b] {colored_user}\n"
+                    f"[b]Lösung:[/b] {colored_solution}"
+                )
+            else:
+                success_text = getattr(
+                    labels,
+                    "typing_mode_correct",
+                    "Richtig!",
+                )
+                self.typing_feedback_label.text = success_text
+
+            anim = Animation(opacity=0.9, duration=0.1) + Animation(
+                opacity=1, duration=0.1
+            )
+            anim.start(self.typing_feedback_label)
+
+            Clock.schedule_once(lambda dt: self._typing_advance(), 0.35)
+
+        else:
+            # Inhaltlich falsch -> falsche Buchstaben rot, Akzentfehler gelb
+            self.typing_feedback_label.color = APP_COLORS["text"]
+            wrong_text = getattr(
+                labels,
+                "typing_mode_wrong",
+                "Nicht ganz. Richtige Lösung:",
+            )
+
+            self.typing_feedback_label.text = (
+                f"{wrong_text}\n"
+                f"[b]Deine Eingabe:[/b] {colored_user}\n"
+                f"[b]Lösung:[/b] {colored_solution}"
+            )
+
+            anim = Animation(opacity=0.6, duration=0.1) + Animation(
+                opacity=1, duration=0.1
+            )
+            anim.start(self.typing_feedback_label)
+
+
+    def _typing_advance(self):
+        """After a correct typed answer, go to the next vocab entry/mode."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
+    def typing_skip(self, instance=None):
+        """Skip the current vocab entry in typing mode."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
+
     # ------------------------------------------------------------------
     # Add / edit vocabulary entries
     # ------------------------------------------------------------------
@@ -2564,6 +2988,7 @@ class VokabaApp(App):
                     "multiple_choice": True,
                     "letter_salad": True,
                     "connect_pairs": True,
+                    "typing": True,
                 },
             )
             save.save_settings(config)
@@ -2584,6 +3009,8 @@ class VokabaApp(App):
             self.available_modes.append("letter_salad")
         if bool_cast(modes_cfg.get("connect_pairs", True)) and unique_len >= 5:
             self.available_modes.append("connect_pairs")
+        if bool_cast(modes_cfg.get("typing", True)):
+            self.available_modes.append("typing")
 
     def on_mode_checkbox_changed(self, path):
         """
