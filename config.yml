@@ -1,6 +1,6 @@
 settings:
   gui:
-    padding_multiplicator: 0.6325301632983623
+    padding_multiplicator: 1.1079544710885678
     text_font_size: 18
     title_font_size: 34
   modes:
