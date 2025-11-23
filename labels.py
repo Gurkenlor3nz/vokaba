@@ -93,3 +93,9 @@ letter_salad_reshuffle = "Neu mischen"
 # ---------------------------------------------------------------------------
 
 connect_pairs_header = "Verbinde die passenden Wörter"
+
+
+
+learn_flashcards_syllable_salad = "Silben-Modus"
+syllable_salad_instruction = "Klicke die Silben in der richtigen Reihenfolge an."
+syllable_salad_reshuffle = "Neu mischen"

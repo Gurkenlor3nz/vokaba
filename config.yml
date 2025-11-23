@@ -9,3 +9,4 @@ settings:
     front_back: true
     letter_salad: true
     multiple_choice: true
+    typing: true

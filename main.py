@@ -538,7 +538,7 @@ class VokabaApp(App):
                 modes_header_text + "\n\n\n",
                 size_hint_y=None,
                 height=dp(
-                    300
+                    400
                     * float(config["settings"]["gui"]["padding_multiplicator"])
                 ),
             )
@@ -645,14 +645,30 @@ class VokabaApp(App):
         grid.add_widget(l6)
         grid.add_widget(c6)
 
-        # connect 5 pairs
-        l5, c5 = add_mode_row(
-            "connect_pairs",
+
+        # letter salad
+        l4, c4 = add_mode_row(
+            "letter_salad", labels.learn_flashcards_letter_salad
+        )
+        grid.add_widget(l4)
+        grid.add_widget(c4)
+
+        # syllable salad (Silben-Modus)
+        l_syl, c_syl = add_mode_row(
+            "syllable_salad",
             getattr(
                 labels,
-                "learn_flashcards_connect_pairs",
+                "learn_flashcards_syllable_salad",
+                "Silben-Modus (Wörter aus Silben)",
             ),
         )
+        if vocab_len_in_settings < 3:
+            c_syl.disabled = True
+            l_syl.text += "  [size=12][i](mind. 3 Einträge nötig)[/i][/size]"
+            l_syl.markup = True
+        grid.add_widget(l_syl)
+        grid.add_widget(c_syl)
+
 
         modes_card.add_widget(grid)
         settings_content.add_widget(modes_card)
@@ -1237,6 +1253,9 @@ class VokabaApp(App):
         elif self.learn_mode == "typing":
             self.typing_mode()
 
+        elif self.learn_mode == "syllable_salad":
+            self.syllable_salad()
+
         else:
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
             self.learn(None, "front_back")
@@ -1456,6 +1475,86 @@ class VokabaApp(App):
                     color = "FF5555"   # rot
                 result_parts.append(f"[color=#{color}]{ch}[/color]")
         return "".join(result_parts)
+
+
+    def _clean_target_for_salad(self, raw_target: str) -> str:
+        """
+        Entfernt Klammern und Leerzeichen für Buchstaben-/Silben-Salat.
+        Z.B. '(to) walk' -> 'towalk' (ohne Leerzeichen, ohne Klammerinhalt)
+        """
+        if not raw_target:
+            return ""
+        cleaned_chars = []
+        in_parens = False
+        for ch in raw_target:
+            if ch == "(":
+                in_parens = True
+                continue
+            if ch == ")":
+                in_parens = False
+                continue
+            if in_parens:
+                continue
+            if ch.isspace():
+                continue
+            cleaned_chars.append(ch)
+        return "".join(cleaned_chars)
+
+    def _clean_target_for_syllables(self, raw_target: str) -> str:
+        """
+        Entfernt nur Klammern für den Silbenmodus – Leerzeichen bleiben drin,
+        damit Wortgrenzen sichtbar bleiben.
+        Z.B. '(to) walk away' -> 'to walk away'
+        """
+        if not raw_target:
+            return ""
+        cleaned_chars = []
+        in_parens = False
+        for ch in raw_target:
+            if ch == "(":
+                in_parens = True
+                continue
+            if ch == ")":
+                in_parens = False
+                continue
+            if in_parens:
+                continue
+            cleaned_chars.append(ch)
+        return "".join(cleaned_chars)
+
+
+    def _split_into_syllable_chunks(self, cleaned: str):
+        """
+        Teilt ein Wort in 'Silben-Karten':
+        - Länge 1: eine Karte
+        - Länge 2–5: zwei Teile
+        - >5: hauptsächlich 3–4 Zeichen lange Karten
+        """
+        cleaned = cleaned or ""
+        n = len(cleaned)
+        if n == 0:
+            return []
+        if n == 1:
+            return [cleaned]
+        if 2 <= n <= 5:
+            first_len = n // 2
+            return [cleaned[:first_len], cleaned[first_len:]]
+        # n > 5 -> hauptsächlich 3–4 Zeichen lange Karten
+        chunks = []
+        i = 0
+        while n - i > 4:
+            remain = n - i
+            # vermeiden, dass am Ende nur 1 Zeichen übrig bleibt
+            if remain - 3 == 1:
+                size = 4
+            else:
+                size = 3
+            chunks.append(cleaned[i: i + size])
+            i += size
+        if i < n:
+            chunks.append(cleaned[i:])
+        return chunks
+
 
 
     def flip_card_learn_func(self, instance=None):
@@ -1938,24 +2037,7 @@ class VokabaApp(App):
             self.header_label.text = ""
 
         raw_target = (correct_vocab.get("foreign_language", "") or "").strip()
-
-        # Clean target: strip spaces and content in parentheses
-        cleaned_chars = []
-        in_parens = False
-        for ch in raw_target:
-            if ch == "(":
-                in_parens = True
-                continue
-            if ch == ")":
-                in_parens = False
-                continue
-            if in_parens:
-                continue
-            if ch.isspace():
-                continue
-            cleaned_chars.append(ch)
-
-        target_clean = "".join(cleaned_chars)
+        target_clean = self._clean_target_for_salad(raw_target)
 
         if not target_clean:
             log(
@@ -2025,14 +2107,15 @@ class VokabaApp(App):
         )
         card.add_widget(self.letter_salad_progress_label)
 
-        # Grid of letter tiles
+        # Grid of letter tiles (mit ScrollView und hellgrauem Rahmen)
         cols = max(1, min(len(scrambled_letters), 10))
         letters_layout = GridLayout(
             cols=cols,
             spacing=dp(8),
             size_hint_y=None,
-            height=dp(70),
+            padding=(0, dp(4)),
         )
+        letters_layout.bind(minimum_height=letters_layout.setter("height"))
 
         for ch in scrambled_letters:
             btn = RoundedButton(
@@ -2045,9 +2128,26 @@ class VokabaApp(App):
             )
             btn.bind(on_press=self.letter_salad_letter_pressed)
             self.letter_salad_buttons.append(btn)
-            letters_layout.add_widget(btn)
 
-        card.add_widget(letters_layout)
+            # kleine hellgraue Box drumherum
+            wrapper = RoundedCard(
+                orientation="vertical",
+                size_hint=(None, None),
+                padding=dp(3),
+                spacing=0,
+                bg_color=APP_COLORS["card_selected"],
+            )
+            wrapper.add_widget(btn)
+            letters_layout.add_widget(wrapper)
+
+        letters_scroll = ScrollView(
+            size_hint=(1, None),
+            height=dp(210),      # genug Platz für mehrere Reihen
+            do_scroll_y=True,
+            do_scroll_x=True,
+        )
+        letters_scroll.add_widget(letters_layout)
+        card.add_widget(letters_scroll)
 
         # Bottom row: skip / reshuffle
         btn_row = BoxLayout(
@@ -2058,8 +2158,7 @@ class VokabaApp(App):
         )
 
         skip_text = getattr(labels, "letter_salad_skip")
-        reshuffle_text = getattr(
-            labels, "letter_salad_reshuffle")
+        reshuffle_text = getattr(labels, "letter_salad_reshuffle")
 
         skip_btn = self.make_secondary_button(
             skip_text,
@@ -2080,6 +2179,7 @@ class VokabaApp(App):
 
         center.add_widget(card)
         self.learn_content.add_widget(center)
+
 
     def letter_salad_letter_pressed(self, button, instance=None):
         """Handle a single letter tile click in letter salad mode."""
@@ -2147,6 +2247,354 @@ class VokabaApp(App):
         self.is_back = False
         self.learn_mode = random.choice(self.available_modes)
         self.show_current_card()
+
+
+    # ------------------------------------------------------------------
+    # Syllable salad mode (Silben-Karten anklicken)
+    # ------------------------------------------------------------------
+
+    def syllable_salad(self):
+        """Wie Buchstabensalat, aber mit Silben und mehreren Wörtern."""
+        self.learn_content.clear_widgets()
+
+        if not self.all_vocab_list:
+            log("no vocab -> syllable_salad aborted")
+            self.main_menu()
+            return
+
+        # Hauptwort = aktuelles Vokabel, plus bis zu 2 weitere
+        main_vocab = self.all_vocab_list[self.current_vocab_index]
+        pool = [e for e in self.all_vocab_list if e is not main_vocab]
+
+        max_words = 3
+        num_extra = max(0, min(max_words - 1, len(pool)))
+        extra = random.sample(pool, num_extra) if num_extra > 0 else []
+
+        selected = [main_vocab] + extra
+
+        # Duplikate entfernen
+        unique = {}
+        for e in selected:
+            key = (e.get("own_language", ""), e.get("foreign_language", ""))
+            if key not in unique:
+                unique[key] = e
+        selected = list(unique.values())
+
+        # Zustand für diesen Durchgang
+        self.syllable_salad_items = []
+        self.syllable_salad_buttons = []
+        self.syllable_salad_finished_count = 0
+
+        # aktuell gewähltes (noch nicht fertiges) Wort
+        self.syllable_salad_active_word_index = None
+
+
+        if hasattr(self, "header_label"):
+            self.header_label.text = ""
+
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=30 * float(
+                config["settings"]["gui"]["padding_multiplicator"]
+            ),
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.9, 0.6),
+            padding=dp(16),
+            spacing=dp(12),
+        )
+
+        instruction_text = getattr(
+            labels,
+            "syllable_salad_instruction",
+            "Setze die Wörter aus Silben zusammen:",
+        )
+        instr_lbl = self.make_text_label(
+            instruction_text,
+            size_hint_y=None,
+            height=dp(30),
+        )
+        card.add_widget(instr_lbl)
+
+        # Oben: fertige Wörter / Fortschritt
+        self.syllable_salad_progress_box = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            height=dp(80),
+            spacing=dp(4),
+        )
+
+        for vocab in selected:
+            raw_target = (vocab.get("foreign_language", "") or "").strip()
+            target_clean = self._clean_target_for_syllables(raw_target)
+            if not target_clean:
+                continue
+
+            chunks = self._split_into_syllable_chunks(target_clean)
+            if not chunks:
+                continue
+
+            own = vocab.get("own_language", "") or ""
+            base_text = f"[b]{own}[/b]: "
+
+            lbl = self.make_text_label(
+                base_text,
+                size_hint_y=None,
+                height=dp(24),
+            )
+            lbl.markup = True
+
+            item = {
+                "vocab": vocab,
+                "target_clean": target_clean,
+                "chunks": chunks,
+                "next_index": 0,
+                "built": "",
+                "base_text": base_text,
+                "label": lbl,
+                "finished": False,
+            }
+            self.syllable_salad_items.append(item)
+            self.syllable_salad_progress_box.add_widget(lbl)
+
+        if not self.syllable_salad_items:
+            log("syllable_salad: no suitable words, falling back")
+            self.learn_mode = random.choice(
+                [m for m in self.available_modes if m != "syllable_salad"]
+                or self.available_modes
+            )
+            self.show_current_card()
+            return
+
+        card.add_widget(self.syllable_salad_progress_box)
+
+        # Buttons für alle Silben erzeugen
+        all_buttons = []
+        for word_index, item in enumerate(self.syllable_salad_items):
+            for chunk_index, chunk in enumerate(item["chunks"]):
+                btn = RoundedButton(
+                    text=chunk,
+                    bg_color=APP_COLORS["card"],
+                    color=APP_COLORS["text"],
+                    font_size=int(
+                        config["settings"]["gui"]["title_font_size"]
+                    ),
+                    size_hint=(None, None),
+                    size=(dp(80), dp(56)),
+                )
+                btn._word_index = word_index
+                btn._chunk_index = chunk_index
+                btn.bind(on_press=self.syllable_salad_segment_pressed)
+                all_buttons.append(btn)
+
+        random.shuffle(all_buttons)
+
+        total_segments = len(all_buttons)
+        cols = max(1, min(total_segments, 6))
+        segments_layout = GridLayout(
+            cols=cols,
+            spacing=dp(8),
+            size_hint_y=None,
+            padding=(0, dp(4)),
+        )
+        segments_layout.bind(minimum_height=segments_layout.setter("height"))
+
+        for btn in all_buttons:
+            # kleine hellgraue Box um jede Silben-Karte
+            wrapper = RoundedCard(
+                orientation="vertical",
+                size_hint=(None, None),
+                padding=dp(3),
+                spacing=0,
+                bg_color=APP_COLORS["card_selected"],  # hellgrauer Rahmen
+            )
+            wrapper.add_widget(btn)
+            segments_layout.add_widget(wrapper)
+            self.syllable_salad_buttons.append(btn)
+
+
+        # ScrollView für viele Silben – etwas höher, damit mehrere Reihen sichtbar sind
+        scroll = ScrollView(
+            size_hint=(1, None),
+            height=dp(210),   # vorher 150
+            do_scroll_y=True,
+            do_scroll_x=True,
+        )
+        scroll.add_widget(segments_layout)
+        card.add_widget(scroll)
+
+
+        # Skip / neu mischen
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(12),
+        )
+
+        skip_text = getattr(labels, "letter_salad_skip", "Überspringen")
+        reshuffle_text = getattr(
+            labels,
+            "syllable_salad_reshuffle",
+            getattr(labels, "letter_salad_reshuffle", "Neu mischen"),
+        )
+
+        skip_btn = self.make_secondary_button(
+            skip_text,
+            size_hint=(0.5, 1),
+        )
+        skip_btn.bind(on_press=self.syllable_salad_skip)
+
+        reshuffle_btn = self.make_secondary_button(
+            reshuffle_text,
+            size_hint=(0.5, 1),
+        )
+        # einfach neu aufbauen (wie bei Buchstabensalat)
+        reshuffle_btn.bind(on_press=lambda inst: self.syllable_salad())
+
+        btn_row.add_widget(skip_btn)
+        btn_row.add_widget(reshuffle_btn)
+        card.add_widget(btn_row)
+
+        center.add_widget(card)
+        self.learn_content.add_widget(center)
+
+    def _reset_syllable_word(self, word_index):
+        """Setzt den Fortschritt eines Wortes im Silbenmodus vollständig zurück."""
+        if not (0 <= word_index < len(self.syllable_salad_items)):
+            return
+
+        item = self.syllable_salad_items[word_index]
+        item["next_index"] = 0
+        item["built"] = ""
+        item["finished"] = False
+
+        lbl = item["label"]
+        lbl.text = item["base_text"]
+        lbl.color = APP_COLORS["muted"]
+        lbl.markup = True
+
+        # Alle Buttons dieses Wortes zurück auf grau + aktiv
+        for btn in self.syllable_salad_buttons:
+            if getattr(btn, "_word_index", None) == word_index:
+                btn.disabled = False
+                btn.set_bg_color(APP_COLORS["card"])
+                btn.color = APP_COLORS["text"]
+
+
+    def syllable_salad_segment_pressed(self, button, instance=None):
+        """Verarbeitet einen Klick auf eine Silben-Karte."""
+        if getattr(button, "disabled", False):
+            return
+
+        word_index = getattr(button, "_word_index", None)
+        chunk_index = getattr(button, "_chunk_index", None)
+        if word_index is None or chunk_index is None:
+            return
+
+        if not (0 <= word_index < len(self.syllable_salad_items)):
+            return
+
+        item = self.syllable_salad_items[word_index]
+        if item["finished"]:
+            return
+
+        # Aktives Wort bestimmen / wechseln
+        active = getattr(self, "syllable_salad_active_word_index", None)
+
+        if active is None:
+            # noch kein Wort gewählt -> dieses wird aktiv
+            self.syllable_salad_active_word_index = word_index
+            active = word_index
+        else:
+            if active != word_index:
+                # Wenn man den Wortanfang eines anderen Wortes klickt:
+                # altes Wort zurücksetzen, neues wird aktiv
+                if chunk_index == 0 and item["next_index"] == 0:
+                    self._reset_syllable_word(active)
+                    self.syllable_salad_active_word_index = word_index
+                    active = word_index
+                else:
+                    # anderes Wort mitten drin angeklickt -> als Fehler werten
+                    button.set_bg_color(APP_COLORS["danger"])
+                    button.color = APP_COLORS["text"]
+
+                    def reset_btn(dt, b=button):
+                        b.set_bg_color(APP_COLORS["card"])
+                        b.color = APP_COLORS["text"]
+
+                    Clock.schedule_once(reset_btn, 0.25)
+                    return
+
+        # Ab hier ist word_index das aktive Wort
+        item = self.syllable_salad_items[word_index]
+        expected_index = item["next_index"]
+
+        # Richtige nächste Silbe?
+        if chunk_index == expected_index:
+            button.set_bg_color(APP_COLORS["success"])
+            button.color = APP_COLORS["text"]
+            button.disabled = True
+
+            item["next_index"] += 1
+            item["built"] += button.text
+
+            lbl = item["label"]
+            lbl.text = item["base_text"] + item["built"]
+            lbl.markup = True
+
+            if item["next_index"] >= len(item["chunks"]):
+                # Wort fertig
+                item["finished"] = True
+                self.syllable_salad_finished_count += 1
+                lbl.color = APP_COLORS["success"]
+
+                # aktives Wort freigeben, damit man ein neues starten kann
+                self.syllable_salad_active_word_index = None
+
+                if self.syllable_salad_finished_count >= len(
+                    self.syllable_salad_items
+                ):
+                    Clock.schedule_once(
+                        lambda dt: self._syllable_salad_finish(), 0.3
+                    )
+        else:
+            # falsche Silbe
+            button.set_bg_color(APP_COLORS["danger"])
+            button.color = APP_COLORS["text"]
+
+            def reset_btn(dt, b=button):
+                b.set_bg_color(APP_COLORS["card"])
+                b.color = APP_COLORS["text"]
+
+            Clock.schedule_once(reset_btn, 0.25)
+
+
+    def _syllable_salad_finish(self):
+        """Wenn alle Wörter korrekt gebaut wurden, gehe weiter."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
+    def syllable_salad_skip(self, instance=None):
+        """Überspringt den aktuellen Silben-Durchgang."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
+
 
 
     # ------------------------------------------------------------------
@@ -2989,6 +3437,7 @@ class VokabaApp(App):
                     "letter_salad": True,
                     "connect_pairs": True,
                     "typing": True,
+                    "syllable_salad": True,
                 },
             )
             save.save_settings(config)
@@ -2999,18 +3448,30 @@ class VokabaApp(App):
         unique_len = self._count_unique_vocab_pairs()
 
         self.available_modes = []
+
+        # non-dependable of vocab lengh
         if bool_cast(modes_cfg.get("front_back", True)):
             self.available_modes.append("front_back")
         if bool_cast(modes_cfg.get("back_front", True)):
             self.available_modes.append("back_front")
-        if bool_cast(modes_cfg.get("multiple_choice", True)) and vocab_len >= 5:
-            self.available_modes.append("multiple_choice")
         if bool_cast(modes_cfg.get("letter_salad", True)):
             self.available_modes.append("letter_salad")
-        if bool_cast(modes_cfg.get("connect_pairs", True)) and unique_len >= 5:
-            self.available_modes.append("connect_pairs")
         if bool_cast(modes_cfg.get("typing", True)):
             self.available_modes.append("typing")
+
+        # dependable of vocab lengh
+        if bool_cast(modes_cfg.get("multiple_choice", True)) and vocab_len >= 5:
+            self.available_modes.append("multiple_choice")
+        if bool_cast(modes_cfg.get("connect_pairs", True)) and unique_len >= 5:
+            self.available_modes.append("connect_pairs")
+        if bool_cast(modes_cfg.get("syllable_salad", True)) and vocab_len >= 3:
+            self.available_modes.append("syllable_salad")
+
+        # Fallback, falls wirklich nichts übrig bleibt
+        if not self.available_modes:
+            log("recompute_available_modes: no active modes, using fallback ['front_back']")
+            self.available_modes = ["front_back"]
+
 
     def on_mode_checkbox_changed(self, path):
         """

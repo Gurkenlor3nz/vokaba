@@ -41,10 +41,10 @@ Sofort:
 Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
 
 ÜBUNGEN I <0.3
-Karteikarte Hint
+×Karteikarte Hint
 karteikarte Bewerten
-Multiple choice 4
-zuordnen
+×Multiple choice 4
+×zuordnen
 
 ÜBUNGEN II0.3<>0.8
 ×Buchstabensalat
@@ -53,11 +53,11 @@ Silben
 Karteikarte bewerten
 ×Multiple choice
 Buchstabengitter
-Zuordnen
+×Zuordnen
 
 
 ÜBUNGENIII
-Schreiben
+×Schreiben
 Buchstabengitter
 ×Buchstabensalat
 buchstabensuppe
