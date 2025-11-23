@@ -24,6 +24,7 @@ from kivy.uix.slider import *
 from kivy.uix.textinput import TextInput
 from kivy.metrics import dp
 from kivy.graphics import Color, RoundedRectangle
+from kivy.animation import Animation
 
 
 
@@ -438,7 +439,7 @@ class VokabaApp(App):
         settings_content.add_widget(self.make_title_label(
             modes_header_text,
             size_hint_y=None,
-            height=dp(120 * float(config["settings"]["gui"]["padding_multiplicator"]))))
+            height=dp(300* float(config["settings"]["gui"]["padding_multiplicator"]))))
 
         modes_card = RoundedCard(
             orientation="vertical",
@@ -488,6 +489,19 @@ class VokabaApp(App):
         l3, c3, = add_mode_row("letter_salad", labels.learn_flashcards_letter_salad)
         grid.add_widget(l3);
         grid.add_widget(c3)
+
+
+        # connect 5 pairs
+        l5, c5 = add_mode_row(
+            "connect_pairs",
+            getattr(labels, "learn_flashcards_connect_pairs", "Wörter verbinden")
+        )
+        if vocab_len_in_settings < 5:
+            c5.disabled = True
+            l5.text += "  [size=12][i](mind. 5 Einträge nötig)[/i][/size]"
+            l5.markup = True
+        grid.add_widget(l5)
+        grid.add_widget(c5)
 
         modes_card.add_widget(grid)
         settings_content.add_widget(modes_card)
@@ -944,6 +958,9 @@ class VokabaApp(App):
         elif self.learn_mode == "letter_salad":
             self.letter_salad()
 
+        elif self.learn_mode == "connect_pairs":
+            self.connect_pairs_mode()
+
         else:
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
             self.learn(None, "front_back")
@@ -989,24 +1006,60 @@ class VokabaApp(App):
         return "".join(letters)
 
 
-
     def flip_card_learn_func(self, instance=None):
+        """
+        Flip-Verhalten für front_back / back_front.
+        Vorderseite -> Rückseite bekommt eine kleine Fade-Animation.
+        """
+        # Nur beim Flip von Vorder- zu Rückseite animieren
+        if not self.is_back and self.learn_mode in ("front_back", "back_front"):
+            self.is_back = True
+            self.animate_flip_current_card()
+            return
+
+        # Rest wie bisher: Rückseite -> nächste Karte, evtl. Moduswechsel
         if self.is_back:
-            # Nächste Karte
             if self.current_vocab_index >= self.max_current_vocab_index - 1:
                 self.current_vocab_index = 0
                 random.shuffle(self.all_vocab_list)
-            else:   self.current_vocab_index += 1
+            else:
+                self.current_vocab_index += 1
 
             self.is_back = False
-
-            # Set random mode
             self.learn_mode = random.choice(self.available_modes)
-
         else:
             self.is_back = True
 
         self.show_current_card()
+
+    def animate_flip_current_card(self):
+        """Kleine Fade-Flip-Animation für Vorder-/Rückseite."""
+        if not hasattr(self, "front_side_label"):
+            # Fallback, falls aus irgendeinem Grund kein Button da ist
+            self.show_current_card()
+            return
+
+        lbl = self.front_side_label
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        # Rückseitentext bestimmen
+        if self.learn_mode == "front_back":
+            new_text = self._format_backside(current_vocab)
+        elif self.learn_mode == "back_front":
+            new_text = current_vocab.get("own_language", "")
+        else:
+            new_text = lbl.text
+
+        def set_back_text(*args):
+            lbl.text = new_text
+            anim_in = Animation(opacity=1, duration=0.15)
+            anim_in.start(lbl)
+
+        # Ausblenden → Text tauschen → Einblenden
+        anim_out = Animation(opacity=0, duration=0.15)
+        anim_out.bind(on_complete=set_back_text)
+        anim_out.start(lbl)
+
 
     def multiple_choice(self):
         self.learn_content.clear_widgets()
@@ -1060,6 +1113,10 @@ class VokabaApp(App):
 
         random.shuffle(answers)
 
+        # NEW: State für animiertes Multiple Choice
+        self.multiple_choice_locked = False
+        self.mc_buttons = []
+
         scroll = ScrollView(size_hint=(1, 1))
         form_layout = BoxLayout(
             orientation="vertical",
@@ -1076,6 +1133,7 @@ class VokabaApp(App):
 
         # Überschrift: abgefragtes Wort (own_language)
         if hasattr(self, "header_label"):
+            self.header_label.color = APP_COLORS["text"]
             self.header_label.text = correct_vocab.get('own_language', '')
 
         for opt in answers:
@@ -1088,24 +1146,249 @@ class VokabaApp(App):
                 height=dp(70)
             )
             btn.bind(on_press=lambda instance, choice=opt: self.multiple_choice_func(correct_vocab, choice, instance))
+            self.mc_buttons.append(btn)
             form_layout.add_widget(btn)
 
         scroll.add_widget(form_layout)
         self.learn_content.add_widget(scroll)
 
 
-    def multiple_choice_func(self, correct_vocab, button_text, instance=None):
-        if (button_text is correct_vocab) or (
-                button_text.get("own_language", "") == correct_vocab.get("own_language", "") and
-                button_text.get("foreign_language", "") == correct_vocab.get("foreign_language", "")
-        ):
-            if self.current_vocab_index >= self.max_current_vocab_index - 1:
-                self.current_vocab_index = 0
-            else:
-                self.current_vocab_index += 1
-            self.is_back = False
-            self.learn_mode = random.choice(self.available_modes)
+    def multiple_choice_func(self, correct_vocab, chosen_vocab, button):
+        # Mehrfach-Klicks während Animation blockieren
+        if getattr(self, "multiple_choice_locked", False):
+            return
+
+        self.multiple_choice_locked = True
+
+        # Auswahl kurz als "aktiv" markieren
+        if isinstance(button, RoundedButton):
+            button.set_bg_color(APP_COLORS["accent"])
+            button.color = APP_COLORS["text"]
+
+        is_correct = (
+            chosen_vocab is correct_vocab or
+            (
+                chosen_vocab.get("own_language", "") == correct_vocab.get("own_language", "")
+                and chosen_vocab.get("foreign_language", "") == correct_vocab.get("foreign_language", "")
+            )
+        )
+
+        if is_correct:
+            # Richtig: grün + kleines Blink-Animation
+            if isinstance(button, RoundedButton):
+                button.set_bg_color(APP_COLORS["success"])
+                button.color = APP_COLORS["text"]
+            anim = Animation(opacity=0.9, duration=0.1) + Animation(opacity=1, duration=0.1)
+            anim.start(button)
+
+            Clock.schedule_once(lambda dt: self._advance_after_correct(), 0.25)
+        else:
+            # Falsch: rot + kurzer Blink, dann zurück auf Standardfarbe
+            if isinstance(button, RoundedButton):
+                button.set_bg_color(APP_COLORS["danger"])
+                button.color = APP_COLORS["text"]
+
+            anim = Animation(opacity=0.6, duration=0.1) + Animation(opacity=1, duration=0.1)
+            anim.start(button)
+
+            def reset_btn(dt, btn=button):
+                if isinstance(btn, RoundedButton):
+                    btn.set_bg_color(APP_COLORS["card"])
+                    btn.color = APP_COLORS["text"]
+                self.multiple_choice_locked = False
+
+            Clock.schedule_once(reset_btn, 0.35)
+
+    def _advance_after_correct(self):
+        """Nach richtiger Multiple-Choice-Antwort weiter zur nächsten Karte / Modus."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.multiple_choice_locked = False
+        self.show_current_card()
+
+
+    def connect_pairs_mode(self):
+        """Neuer Modus: 5 Wörter von Sprache A mit B verbinden."""
+        self.learn_content.clear_widgets()
+
+        if len(self.all_vocab_list) < 5:
+            log("not enough vocab for connect_pairs, falling back")
+            fallback_modes = [m for m in self.available_modes if m != "connect_pairs"]
+            self.learn_mode = random.choice(fallback_modes or self.available_modes)
             self.show_current_card()
+            return
+
+        # Header oben
+        if hasattr(self, "header_label"):
+            header_text = getattr(labels, "connect_pairs_header", "Verbinde die passenden Wörter")
+            self.header_label.text = header_text
+            self.header_label.color = APP_COLORS["text"]
+
+        # Zufällig 5 Vokabeln auswählen
+        self.connect_pairs_items = random.sample(self.all_vocab_list, 5)
+
+        # State-Variablen
+        self.connect_pairs_left_buttons = {}
+        self.connect_pairs_right_buttons = {}
+        self.connect_pairs_selected_left = None
+        self.connect_pairs_selected_right = None
+        self.connect_pairs_matched_count = 0
+        self.connect_pairs_locked = False
+
+        center = AnchorLayout(
+            anchor_x="center", anchor_y="center",
+            padding=30 * float(config["settings"]["gui"]["padding_multiplicator"])
+        )
+
+        card = RoundedCard(
+            orientation="horizontal",
+            size_hint=(0.9, 0.7),
+            padding=dp(16),
+            spacing=dp(24)
+        )
+
+        left_col = BoxLayout(orientation="vertical", spacing=dp(8))
+        right_col = BoxLayout(orientation="vertical", spacing=dp(8))
+
+        # Linke Buttons (own_language)
+        for entry in self.connect_pairs_items:
+            text = entry.get("own_language", "")
+            btn = RoundedButton(
+                text=text,
+                bg_color=APP_COLORS["card"],
+                color=APP_COLORS["text"],
+                size_hint=(1, None),
+                height=dp(48),
+                font_size=int(config["settings"]["gui"]["text_font_size"])
+            )
+            btn._matched = False
+            btn.bind(on_press=lambda instance, e=entry: self.on_connect_left_pressed(instance, e))
+            self.connect_pairs_left_buttons[btn] = entry
+            left_col.add_widget(btn)
+
+        # Rechte Buttons (foreign_language) – Reihenfolge mischen
+        shuffled_items = self.connect_pairs_items[:]
+        random.shuffle(shuffled_items)
+        for entry in shuffled_items:
+            text = entry.get("foreign_language", "")
+            btn = RoundedButton(
+                text=text,
+                bg_color=APP_COLORS["card"],
+                color=APP_COLORS["text"],
+                size_hint=(1, None),
+                height=dp(48),
+                font_size=int(config["settings"]["gui"]["text_font_size"])
+            )
+            btn._matched = False
+            btn.bind(on_press=lambda instance, e=entry: self.on_connect_right_pressed(instance, e))
+            self.connect_pairs_right_buttons[btn] = entry
+            right_col.add_widget(btn)
+
+        card.add_widget(left_col)
+        card.add_widget(right_col)
+        center.add_widget(card)
+        self.learn_content.add_widget(center)
+
+    def _clear_connect_selection(self, side="both"):
+        if side in ("left", "both") and self.connect_pairs_selected_left and not getattr(self.connect_pairs_selected_left, "_matched", False):
+            self.connect_pairs_selected_left.set_bg_color(APP_COLORS["card"])
+            self.connect_pairs_selected_left = None
+        if side in ("right", "both") and self.connect_pairs_selected_right and not getattr(self.connect_pairs_selected_right, "_matched", False):
+            self.connect_pairs_selected_right.set_bg_color(APP_COLORS["card"])
+            self.connect_pairs_selected_right = None
+
+    def on_connect_left_pressed(self, button, entry):
+        if getattr(self, "connect_pairs_locked", False):
+            return
+        if getattr(button, "_matched", False):
+            return
+
+        if self.connect_pairs_selected_left is not button:
+            self._clear_connect_selection("left")
+            self.connect_pairs_selected_left = button
+            button.set_bg_color(APP_COLORS["accent"])
+
+        if self.connect_pairs_selected_right:
+            self._check_connect_pair()
+
+    def on_connect_right_pressed(self, button, entry):
+        if getattr(self, "connect_pairs_locked", False):
+            return
+        if getattr(button, "_matched", False):
+            return
+
+        if self.connect_pairs_selected_right is not button:
+            self._clear_connect_selection("right")
+            self.connect_pairs_selected_right = button
+            button.set_bg_color(APP_COLORS["accent"])
+
+        if self.connect_pairs_selected_left:
+            self._check_connect_pair()
+
+    def _check_connect_pair(self):
+        left_btn = self.connect_pairs_selected_left
+        right_btn = self.connect_pairs_selected_right
+        if not left_btn or not right_btn:
+            return
+
+        left_entry = self.connect_pairs_left_buttons.get(left_btn)
+        right_entry = self.connect_pairs_right_buttons.get(right_btn)
+
+        if left_entry is None or right_entry is None:
+            return
+
+        # Richtige Zuordnung?
+        if left_entry is right_entry:
+            self.connect_pairs_locked = True
+            for btn in (left_btn, right_btn):
+                btn._matched = True
+                btn.set_bg_color(APP_COLORS["success"])
+                btn.color = APP_COLORS["text"]
+                anim = Animation(opacity=0.95, duration=0.1) + Animation(opacity=1, duration=0.1)
+                anim.start(btn)
+
+            self.connect_pairs_selected_left = None
+            self.connect_pairs_selected_right = None
+            self.connect_pairs_matched_count += 1
+            self.connect_pairs_locked = False
+
+            if self.connect_pairs_matched_count >= len(self.connect_pairs_items):
+                Clock.schedule_once(lambda dt: self._connect_pairs_finish(), 0.3)
+        else:
+            # Falsches Paar -> rot aufblitzen
+            self.connect_pairs_locked = True
+            for btn in (left_btn, right_btn):
+                btn.set_bg_color(APP_COLORS["danger"])
+                btn.color = APP_COLORS["text"]
+                anim = Animation(opacity=0.6, duration=0.1) + Animation(opacity=1, duration=0.1)
+                anim.start(btn)
+
+            def reset(dt):
+                if not getattr(left_btn, "_matched", False):
+                    left_btn.set_bg_color(APP_COLORS["card"])
+                if not getattr(right_btn, "_matched", False):
+                    right_btn.set_bg_color(APP_COLORS["card"])
+                self.connect_pairs_selected_left = None
+                self.connect_pairs_selected_right = None
+                self.connect_pairs_locked = False
+
+            Clock.schedule_once(reset, 0.3)
+
+    def _connect_pairs_finish(self):
+        """Nach erfolgreichem Verbinden aller 5 Paare weiter zur nächsten Karte / Modus."""
+        if self.current_vocab_index >= self.max_current_vocab_index - 1:
+            self.current_vocab_index = 0
+        else:
+            self.current_vocab_index += 1
+
+        self.is_back = False
+        self.learn_mode = random.choice(self.available_modes)
+        self.show_current_card()
 
 
     def letter_salad(self):
@@ -1738,6 +2021,7 @@ class VokabaApp(App):
                 "back_front": True,
                 "multiple_choice": True,
                 "letter_salad": True,
+                "connect_pairs": True,
             })
             save.save_settings(config)
 
@@ -1755,6 +2039,8 @@ class VokabaApp(App):
             self.available_modes.append("multiple_choice")
         if bool_cast(modes_cfg.get("letter_salad", True)):
             self.available_modes.append("letter_salad")
+        if bool_cast(modes_cfg.get("connect_pairs", True)) and vocab_len >= 5:
+            self.available_modes.append("connect_pairs")
 
 
     def on_mode_checkbox_changed(self, path):
