@@ -1,7 +1,45 @@
 import csv
 import yaml
 
-def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch", latin_lang="Latein", latin_active=False):
+
+def _normalize_knowledge_level(value):
+    """
+    Normalisiert die 'Wie gut kenne ich das Wort?'-Zahl.
+
+    - fehlend / leer / ungültig -> 0.0
+    - Komma wird als Dezimaltrenner akzeptiert
+    - Werte außerhalb [0, 1] -> 0.0
+    """
+    if value is None:
+        return 0.0
+
+    # Bereits numerisch?
+    if isinstance(value, (int, float)):
+        v = float(value)
+    else:
+        s = str(value).strip()
+        if not s:
+            return 0.0
+        # deutsches Komma zulassen
+        s = s.replace(",", ".")
+        try:
+            v = float(s)
+        except ValueError:
+            return 0.0
+
+    if 0.0 <= v <= 1.0:
+        return v
+    return 0.0
+
+
+def save_to_vocab(
+    vocab,
+    filename,
+    own_lang="Deutsch",
+    foreign_lang="Englisch",
+    latin_lang="Latein",
+    latin_active=False,
+):
     with open(filename, "w", newline="", encoding="utf-8") as f:
         # Metadaten oben als Kommentarzeilen
         f.write(f"# own_language={own_lang}\n")
@@ -9,10 +47,16 @@ def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch", 
         f.write(f"# latin_language={latin_lang}\n")
         f.write(f"# latin_active={str(latin_active)}\n")
 
-        # jetzt 4 Spalten (latein optional)
+        # jetzt 5 Spalten: 3 Sprachen + info + knowledge_level
         writer = csv.DictWriter(
             f,
-            fieldnames=["own_language", "foreign_language", "latin_language", "info"]
+            fieldnames=[
+                "own_language",
+                "foreign_language",
+                "latin_language",
+                "info",
+                "knowledge_level",
+            ],
         )
         writer.writeheader()
 
@@ -21,6 +65,12 @@ def save_to_vocab(vocab, filename, own_lang="Deutsch", foreign_lang="Englisch", 
                 row["latin_language"] = ""
             if "info" not in row:
                 row["info"] = ""
+
+            # NEU: knowledge_level immer setzen und normalisieren
+            row["knowledge_level"] = _normalize_knowledge_level(
+                row.get("knowledge_level", 0.0)
+            )
+
             writer.writerow(row)
 
 
@@ -51,6 +101,16 @@ def load_vocab(filename):
                 row["latin_language"] = ""
             if "info" not in row:
                 row["info"] = ""
+
+            # NEU: Failsafe für knowledge_level
+            if "knowledge_level" in row:
+                row["knowledge_level"] = _normalize_knowledge_level(
+                    row.get("knowledge_level")
+                )
+            else:
+                # alte CSVs ohne Spalte -> 0.0
+                row["knowledge_level"] = 0.0
+
             vocab.append(row)
 
     return vocab, own_lang, foreign_lang, latin_lang, latin_active
@@ -89,13 +149,12 @@ def change_languages(filename, new_own, new_foreign, new_latin, latin_active=Fal
         own_lang=new_own,
         foreign_lang=new_foreign,
         latin_lang=new_latin,
-        latin_active=latin_active
+        latin_active=latin_active,
     )
 
 
-
 def load_settings():
-    #Load config from config.yml and set settings variables
+    # Load config from config.yml and set settings variables
     with open("config.yml", "r") as file:
         config_readable = yaml.safe_load(file)
     return config_readable

@@ -42,14 +42,14 @@ Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikart
 
 ÜBUNGEN I <0.3
 ×Karteikarte Hint
-karteikarte Bewerten
+×karteikarte Bewerten
 ×Multiple choice 4
 ×zuordnen
 
 ÜBUNGEN II0.3<>0.8
 ×Buchstabensalat
 buchstabensuppe
-Silben
+×Silben
 Karteikarte bewerten
 ×Multiple choice
 Buchstabengitter
@@ -61,7 +61,7 @@ Buchstabengitter
 Buchstabengitter
 ×Buchstabensalat
 buchstabensuppe
-Silben
+×Silben
 
 
 

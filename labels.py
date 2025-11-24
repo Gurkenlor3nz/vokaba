@@ -79,23 +79,51 @@ learn_flashcards_connect_pairs = "Wörter Verbinden"
 learn_flashcards_typing_mode = "Übersetzung Eingeben"
 
 no_vocab_warning = "Keine Vokabeln vorhanden. Bitte füge zuerst Vokabeln hinzu."
+not_enougn_vocab_warning =  "  [size=12][i](mind. 5 Einträge nötig)[/i][/size]"
 
 # ---------------------------------------------------------------------------
-# Letter salad mode
+# Different Learning modes
 # ---------------------------------------------------------------------------
 
 letter_salad_instruction = "Tippe die Buchstaben in der richtigen Reihenfolge an."
 letter_salad_skip = "Überspringen"
 letter_salad_reshuffle = "Neu mischen"
-
-# ---------------------------------------------------------------------------
-# Connect pairs mode
-# ---------------------------------------------------------------------------
-
 connect_pairs_header = "Verbinde die passenden Wörter"
-
-
-
 learn_flashcards_syllable_salad = "Silben-Modus"
 syllable_salad_instruction = "Klicke die Silben in der richtigen Reihenfolge an."
 syllable_salad_reshuffle = "Neu mischen"
+
+
+# ---------------------------------------------------------------------------
+# Knowledge-level deltas für verschiedene Übungstypen
+# ---------------------------------------------------------------------------
+
+knowledge_delta_self_very_easy = 0.09
+knowledge_delta_self_easy = 0.05
+knowledge_delta_self_hard = -0.01
+knowledge_delta_self_very_hard = -0.08
+
+knowledge_delta_multiple_choice_correct = 0.07
+knowledge_delta_multiple_choice_wrong = -0.06
+
+knowledge_delta_letter_salad_per_correct_letter = 0.01
+knowledge_delta_letter_salad_short_word_bonus = 0.02
+knowledge_delta_letter_salad_wrong_letter = -0.025
+
+knowledge_delta_connect_pairs_correct_word = 0.06
+knowledge_delta_connect_pairs_wrong_word = -0.074
+
+knowledge_delta_typing_correct = 0.093
+knowledge_delta_typing_wrong_per_char = -0.01
+
+knowledge_delta_syllable_correct_word = 0.08
+knowledge_delta_syllable_wrong_word = -0.05
+
+# ---------------------------------------------------------------------------
+# Texte für die Selbstkontrolle (Flashcards)
+# ---------------------------------------------------------------------------
+
+self_rating_very_easy = "Sehr einfach"
+self_rating_easy = "Einfach"
+self_rating_hard = "Schwierig"
+self_rating_very_hard = "Sehr schwer"

@@ -607,7 +607,7 @@ class VokabaApp(App):
         )
         if vocab_len_in_settings < 5:
             c3.disabled = True
-            l3.text += "  [size=12][i](mind. 5 Einträge nötig)[/i][/size]"
+            l3.text += labels.not_enougn_vocab_warning
             l3.markup = True
         grid.add_widget(l3)
         grid.add_widget(c3)
@@ -630,7 +630,7 @@ class VokabaApp(App):
         if unique_vocab_len_in_settings < 5:
             c5.disabled = True
             l5.text += (
-                "  [size=12][i](mind. 5 eindeutige Paare nötig)[/i][/size]"
+                labels.not_enougn_vocab_warning
             )
             l5.markup = True
         grid.add_widget(l5)
@@ -646,13 +646,6 @@ class VokabaApp(App):
         grid.add_widget(c6)
 
 
-        # letter salad
-        l4, c4 = add_mode_row(
-            "letter_salad", labels.learn_flashcards_letter_salad
-        )
-        grid.add_widget(l4)
-        grid.add_widget(c4)
-
         # syllable salad (Silben-Modus)
         l_syl, c_syl = add_mode_row(
             "syllable_salad",
@@ -664,7 +657,7 @@ class VokabaApp(App):
         )
         if vocab_len_in_settings < 3:
             c_syl.disabled = True
-            l_syl.text += "  [size=12][i](mind. 3 Einträge nötig)[/i][/size]"
+            l_syl.text += labels.not_enougn_vocab_warning
             l_syl.markup = True
         grid.add_widget(l_syl)
         grid.add_widget(c_syl)
@@ -1113,11 +1106,13 @@ class VokabaApp(App):
         """
         Build the shared learning layout and prepare the list of vocab entries.
 
-        Depending on `mode`, show_current_card() will render different
-        interactions (flashcards, multiple choice, letter salad, connect pairs).
+        Der übergebene mode wird nur noch geloggt; die eigentliche
+        Moduswahl passiert pro Vokabel abhängig von knowledge_level.
         """
-        log(f"entered learn menu with mode={mode}")
-        self.learn_mode = mode
+        log(f"entered learn menu with requested mode={mode}")
+        # Modus wird jetzt dynamisch gewählt
+        self.learn_mode = None
+        self.self_rating_enabled = True  # Anki-style Selbstkontrolle
 
         self.window.clear_widgets()
 
@@ -1152,7 +1147,7 @@ class VokabaApp(App):
         self.header_anchor.add_widget(self.header_label)
         self.learn_area.add_widget(self.header_anchor)
 
-        # Top-right back button
+        # Top-right back button (saves knowledge levels before leaving)
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
@@ -1162,32 +1157,61 @@ class VokabaApp(App):
         )
         back_button = self.make_icon_button(
             "assets/back_button.png",
-            on_press=self.main_menu,
+            on_press=self.exit_learning,
             size=dp(56),
         )
         top_right.add_widget(back_button)
         self.learn_area.add_widget(top_right)
 
         # Build the vocab list for this session (single stack or all stacks)
-        all_vocab = []
         self.all_vocab_list = []
+        self.stack_vocab_lists = {}
+        self.stack_meta_map = {}
+        self.entry_to_stack_file = {}
+
         self.is_back = False
         self.current_vocab_index = 0
 
+        filenames = []
         if stack:
-            file = save.load_vocab("vocab/" + stack)
-            if isinstance(file, tuple):
-                file = file[0]
-            all_vocab.append(file)
+            filenames.append("vocab/" + stack)
         else:
-            for i in os.listdir("vocab/"):
-                file = save.load_vocab("vocab/" + i)
-                if isinstance(file, tuple):
-                    file = file[0]
-                all_vocab.append(file)
+            if not os.path.exists("vocab"):
+                os.makedirs("vocab")
+            for name in os.listdir("vocab/"):
+                full = os.path.join("vocab", name)
+                if os.path.isfile(full):
+                    filenames.append(full)
 
-        for vocab_list in all_vocab:
+        for filename in filenames:
+            data = save.load_vocab(filename)
+            # wie im restlichen Code: load_vocab kann Liste oder Tuple liefern
+            if isinstance(data, tuple):
+                vocab_list = data[0]
+            else:
+                vocab_list = data
+
+            own_lang, foreign_lang, latin_lang, latin_active = save.read_languages(
+                filename
+            )
+
+            self.stack_vocab_lists[filename] = vocab_list
+            self.stack_meta_map[filename] = (
+                own_lang,
+                foreign_lang,
+                latin_lang,
+                latin_active,
+            )
+
             for entry in vocab_list:
+                # Zuordnung: welches Entry gehört zu welcher Datei?
+                self.entry_to_stack_file[id(entry)] = filename
+                # Safety: knowledge_level immer vorhanden
+                if "knowledge_level" not in entry:
+                    entry["knowledge_level"] = 0.0
+                # evtl. alte Helper-Felder loswerden
+                entry.pop("_stack_file", None)
+
                 self.all_vocab_list.append(entry)
 
         random.shuffle(self.all_vocab_list)
@@ -1211,10 +1235,16 @@ class VokabaApp(App):
             self.window.add_widget(msg_anchor)
             return
 
-        # Only allow modes that are enabled and have enough data
+        # Nur Modi erlauben, die aktiviert sind und für die genug Vokabeln da sind
         self.recompute_available_modes()
 
+        # Startvokabel & Startmodus nach knowledge_level wählen
+        self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
+
         self.show_current_card()
+
+
 
     # ------------------------------------------------------------------
     # Card routing depending on mode
@@ -1260,8 +1290,9 @@ class VokabaApp(App):
             log(f"Unknown learn mode {self.learn_mode}, fallback to front_back")
             self.learn(None, "front_back")
 
+
     def show_button_card(self, text, callback):
-        """Simple flashcard screen: one big button that flips or advances."""
+        """Simple flashcard screen: one big button + optional self-rating row."""
         if hasattr(self, "header_label"):
             self.header_label.text = ""
 
@@ -1273,16 +1304,97 @@ class VokabaApp(App):
             ),
         )
 
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.7, 0.6),
+            padding=dp(12),
+            spacing=dp(8),
+        )
+
         self.front_side_label = RoundedButton(
             text=text,
             bg_color=APP_COLORS["card"],
             color=APP_COLORS["text"],
             font_size=int(config["settings"]["gui"]["title_font_size"]),
-            size_hint=(0.7, 0.6),
+            size_hint=(1, 0.8),
         )
         self.front_side_label.bind(on_press=callback)
-        center_center.add_widget(self.front_side_label)
+        card.add_widget(self.front_side_label)
+
+        # Self-rating buttons (Anki-like) only for front/back modes
+        self.selfrating_box = None
+        if getattr(self, "self_rating_enabled", False) and self.learn_mode in (
+            "front_back",
+            "back_front",
+        ):
+            self.selfrating_box = BoxLayout(
+                orientation="horizontal",
+                size_hint=(1, 0.2),
+                spacing=dp(8),
+            )
+
+            buttons = [
+                ("self_rating_very_easy", "very_easy"),
+                ("self_rating_easy", "easy"),
+                ("self_rating_hard", "hard"),
+                ("self_rating_very_hard", "very_hard"),
+            ]
+            for label_name, quality in buttons:
+                text_label = getattr(labels, label_name, quality)
+                btn = self.make_secondary_button(
+                    text_label,
+                    size_hint=(0.25, 1),
+                )
+                btn.bind(
+                    on_press=lambda inst, q=quality: self.self_rate_card(q)
+                )
+                self.selfrating_box.add_widget(btn)
+
+            # initially hidden; becomes visible when back side is shown
+            self.selfrating_box.opacity = 0
+            self.selfrating_box.disabled = True
+
+            card.add_widget(self.selfrating_box)
+
+        center_center.add_widget(card)
         self.learn_content.add_widget(center_center)
+
+
+    def self_rate_card(self, quality):
+        """
+        Self-assessment for flashcards (front/back, back/front), Anki style.
+
+        quality: 'very_easy', 'easy', 'hard', 'very_hard'
+        """
+        if not getattr(self, "all_vocab_list", None):
+            return
+
+        current_vocab = self.all_vocab_list[self.current_vocab_index]
+
+        if quality == "very_easy":
+            delta = getattr(labels, "knowledge_delta_self_very_easy", 0.09)
+        elif quality == "easy":
+            delta = getattr(labels, "knowledge_delta_self_easy", 0.05)
+        elif quality == "hard":
+            delta = getattr(labels, "knowledge_delta_self_hard", -0.01)
+        elif quality == "very_hard":
+            delta = getattr(labels, "knowledge_delta_self_very_hard", -0.08)
+        else:
+            delta = 0.0
+
+        self._adjust_knowledge_level(current_vocab, delta)
+
+        # Nächste Vokabel (low score = höhere Wahrscheinlichkeit) + passenden Modus wählen
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
+        else:
+            self.current_vocab_index = 0
+
+        self.is_back = False
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
+        self.show_current_card()
+
+
 
     def _format_backside(self, vocab):
         """Combine back-side text (foreign, info, optional Latin) into one string."""
@@ -1556,34 +1668,286 @@ class VokabaApp(App):
         return chunks
 
 
+    # ------------------------------------------------------------------
+    # Knowledge / difficulty helpers
+    # ------------------------------------------------------------------
+
+    def _adjust_knowledge_level(self, vocab, delta, persist_immediately=True):
+        """
+        Increase/decrease vocab['knowledge_level'] by `delta` and clamp to [0, 1].
+        Wenn persist_immediately=True, wird der entsprechende Stack sofort gespeichert.
+        """
+        if not vocab:
+            return
+        try:
+            current = float(vocab.get("knowledge_level", 0.0))
+        except (TypeError, ValueError):
+            current = 0.0
+        try:
+            delta_val = float(delta)
+        except (TypeError, ValueError):
+            delta_val = 0.0
+
+        new_level = current + delta_val
+        if new_level < 0.0:
+            new_level = 0.0
+        elif new_level > 1.0:
+            new_level = 1.0
+
+        vocab["knowledge_level"] = new_level
+
+        if persist_immediately:
+            try:
+                self._persist_single_entry(vocab)
+            except Exception as e:
+                log(f"error while auto-saving knowledge_level: {e}")
+
+
+    def _persist_single_entry(self, vocab):
+        """
+        Speichert den Stack, zu dem dieses Vokabel gehört, sofort in die CSV-Datei.
+        """
+        if not hasattr(self, "stack_vocab_lists"):
+            return
+
+        filename_map = getattr(self, "entry_to_stack_file", {})
+        filename = filename_map.get(id(vocab))
+        if not filename:
+            return
+
+        vocab_list = self.stack_vocab_lists.get(filename)
+        if vocab_list is None:
+            return
+
+        # Safety: alte Hilfs-Schlüssel entfernen, falls noch vorhanden
+        for entry in vocab_list:
+            if isinstance(entry, dict):
+                entry.pop("_stack_file", None)
+
+        meta = getattr(self, "stack_meta_map", {}).get(filename)
+        if meta is None:
+            own_lang, foreign_lang, latin_lang, latin_active = save.read_languages(
+                filename
+            )
+        else:
+            own_lang, foreign_lang, latin_lang, latin_active = meta
+
+        try:
+            save.save_to_vocab(
+                vocab_list,
+                filename,
+                own_lang=own_lang or "Deutsch",
+                foreign_lang=foreign_lang or "Englisch",
+                latin_lang=latin_lang or "Latein",
+                latin_active=latin_active,
+            )
+        except Exception as e:
+            log(f"error while auto-saving vocab '{filename}': {e}")
+
+
+    def persist_knowledge_levels(self):
+        """
+        Write all vocab stacks from the current learning session back to CSV.
+        Wird beim Verlassen des Lernmodus (exit_learning) verwendet.
+        """
+        if not hasattr(self, "stack_vocab_lists"):
+            return
+
+        for filename, vocab_list in getattr(self, "stack_vocab_lists", {}).items():
+            # Sicherheit: alle Hilfsfelder entfernen, falls vorhanden
+            for entry in vocab_list:
+                if isinstance(entry, dict):
+                    entry.pop("_stack_file", None)
+
+            meta = getattr(self, "stack_meta_map", {}).get(filename)
+            if meta is None:
+                own_lang, foreign_lang, latin_lang, latin_active = save.read_languages(
+                    filename
+                )
+            else:
+                own_lang, foreign_lang, latin_lang, latin_active = meta
+
+            try:
+                save.save_to_vocab(
+                    vocab_list,
+                    filename,
+                    own_lang=own_lang or "Deutsch",
+                    foreign_lang=foreign_lang or "Englisch",
+                    latin_lang=latin_lang or "Latein",
+                    latin_active=latin_active,
+                )
+            except Exception as e:
+                log(f"error while saving vocab '{filename}': {e}")
+
+
+    def exit_learning(self, instance=None):
+        """Persist knowledge levels and return to the main menu."""
+        try:
+            self.persist_knowledge_levels()
+        except Exception as e:
+            log(f"persist_knowledge_levels failed: {e}")
+        self.main_menu()
+
+    # ------------------------------------------------------------------
+    # Vokabelauswahl & Moduswahl nach knowledge_level
+    # ------------------------------------------------------------------
+
+    def _compute_vocab_weight(self, entry):
+        """
+        Gewicht für die Zufallsauswahl:
+        - niedriger knowledge_level  -> höheres Gewicht
+        - höherer knowledge_level    -> niedrigeres Gewicht
+        """
+        try:
+            level = float(entry.get("knowledge_level", 0.0))
+        except (TypeError, ValueError):
+            level = 0.0
+        if level < 0.0:
+            level = 0.0
+        elif level > 1.0:
+            level = 1.0
+
+        weight = 1.0 - level  # 0 -> 1.0, 1 -> 0
+        # kleines Minimum, damit „gute“ Vokabeln nicht komplett verschwinden
+        if weight < 0.05:
+            weight = 0.05
+        return weight
+
+    def _pick_next_vocab_index(self, avoid_current=True):
+        """
+        Wählt den Index der nächsten Vokabel:
+        - Vokabeln mit niedrigem knowledge_level sind wahrscheinlicher.
+        - optional wird die aktuelle Vokabel ausgeschlossen (avoid_current=True).
+        """
+        if not getattr(self, "all_vocab_list", None):
+            return 0
+
+        n = len(self.all_vocab_list)
+        if n <= 1:
+            return 0
+
+        weights = []
+        total = 0.0
+        current_idx = getattr(self, "current_vocab_index", 0)
+
+        for idx, entry in enumerate(self.all_vocab_list):
+            if avoid_current and idx == current_idx and n > 1:
+                w = 0.0
+            else:
+                w = self._compute_vocab_weight(entry)
+            weights.append(w)
+            total += w
+
+        if total <= 0.0:
+            # Fallback: gleichverteilt
+            candidates = list(range(n))
+            if avoid_current and n > 1 and current_idx in candidates:
+                candidates.remove(current_idx)
+            return random.choice(candidates)
+
+        r = random.random() * total
+        acc = 0.0
+        for idx, w in enumerate(weights):
+            acc += w
+            if r <= acc:
+                return idx
+
+        # Numerischer Fallback
+        return n - 1
+
+    def _get_current_vocab(self):
+        if not getattr(self, "all_vocab_list", None):
+            return None
+        if not (0 <= getattr(self, "current_vocab_index", 0) < len(self.all_vocab_list)):
+            self.current_vocab_index = 0
+        return self.all_vocab_list[self.current_vocab_index]
+
+    def _get_mode_pool_for_level(self, level):
+        """
+        Gibt die Liste der Modi für einen gegebenen knowledge_level zurück,
+        geschnitten mit self.available_modes (Einstellungen bleiben gültig).
+
+        Levelbänder:
+          0.00 – 0.35 : front/back, back/front, multiple_choice, connect_pairs
+          0.35 – 0.60 : multiple_choice, connect_pairs, letter_salad, syllable_salad
+          > 0.60      : alles außer Flashcards (kein front_back/back_front)
+        """
+        try:
+            lvl = float(level)
+        except (TypeError, ValueError):
+            lvl = 0.0
+        if lvl < 0.0:
+            lvl = 0.0
+        elif lvl > 1.0:
+            lvl = 1.0
+
+        if lvl <= 0.35:
+            base = {"front_back", "back_front", "multiple_choice", "connect_pairs"}
+        elif lvl <= 0.60:
+            base = {"multiple_choice", "connect_pairs", "letter_salad", "syllable_salad"}
+        else:
+            base = {"multiple_choice", "connect_pairs", "letter_salad", "syllable_salad", "typing"}
+
+        candidates = [m for m in getattr(self, "available_modes", []) if m in base]
+        if not candidates:
+            # Falls der Nutzer alles in diesem Band deaktiviert hat,
+            # nimm irgendeinen aktiven Modus.
+            candidates = list(getattr(self, "available_modes", []))
+        return candidates
+
+    def _choose_mode_for_vocab(self, vocab):
+        """Wählt einen Modus passend zum knowledge_level dieser Vokabel."""
+        if vocab is None:
+            return random.choice(self.available_modes) if self.available_modes else "front_back"
+        level = vocab.get("knowledge_level", 0.0)
+        pool = self._get_mode_pool_for_level(level)
+        if not pool:
+            return "front_back"
+        return random.choice(pool)
+
 
     def flip_card_learn_func(self, instance=None):
         """
         Flip behavior for front_back / back_front.
 
-        First tap: show the back side with a short animation.
-        Second tap: advance to the next card and possibly switch mode.
+        With self-rating enabled:
+            - first tap shows the back side
+            - rating buttons decide how to continue
+        Without self-rating (legacy): second tap advances to the next card.
         """
-        # Animate only when flipping from front to back
+        # New behavior with self-rating (Anki-style)
+        if (
+            getattr(self, "self_rating_enabled", False)
+            and self.learn_mode in ("front_back", "back_front")
+        ):
+            # First tap: show back
+            if not self.is_back:
+                self.is_back = True
+                self.animate_flip_current_card()
+            # Second tap on the card does nothing; user must choose a rating
+            return
+
+        # Legacy behavior for other modes / when self-rating is disabled
         if not self.is_back and self.learn_mode in ("front_back", "back_front"):
             self.is_back = True
             self.animate_flip_current_card()
             return
 
-        # Back side: advance to next card and randomize mode
+        # Back side: advance to next card and randomize mode (legacy path)
         if self.is_back:
-            if self.current_vocab_index >= self.max_current_vocab_index - 1:
-                self.current_vocab_index = 0
-                random.shuffle(self.all_vocab_list)
+            if self.max_current_vocab_index > 1:
+                self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
             else:
-                self.current_vocab_index += 1
+                self.current_vocab_index = 0
 
             self.is_back = False
-            self.learn_mode = random.choice(self.available_modes)
+            self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         else:
             self.is_back = True
 
         self.show_current_card()
+
+
 
     def animate_flip_current_card(self):
         """Small fade animation used when a card is flipped."""
@@ -1603,12 +1967,24 @@ class VokabaApp(App):
 
         def set_back_text(*args):
             lbl.text = new_text
+
+            # Self-rating row becomes visible once the back side is shown
+            if (
+                getattr(self, "self_rating_enabled", False)
+                and self.learn_mode in ("front_back", "back_front")
+                and hasattr(self, "selfrating_box")
+                and self.selfrating_box is not None
+            ):
+                self.selfrating_box.disabled = False
+                self.selfrating_box.opacity = 1
+
             anim_in = Animation(opacity=1, duration=0.15)
             anim_in.start(lbl)
 
         anim_out = Animation(opacity=0, duration=0.15)
         anim_out.bind(on_complete=set_back_text)
         anim_out.start(lbl)
+
 
     # ------------------------------------------------------------------
     # Multiple choice mode
@@ -1733,6 +2109,21 @@ class VokabaApp(App):
             == correct_vocab.get("foreign_language", "")
         )
 
+        # Update knowledge level for the target vocab
+        if is_correct:
+            delta = getattr(
+                labels,
+                "knowledge_delta_multiple_choice_correct",
+                0.07,
+            )
+        else:
+            delta = getattr(
+                labels,
+                "knowledge_delta_multiple_choice_wrong",
+                -0.06,
+            )
+        self._adjust_knowledge_level(correct_vocab, delta)
+
         if is_correct:
             if isinstance(button, RoundedButton):
                 button.set_bg_color(APP_COLORS["success"])
@@ -1763,17 +2154,19 @@ class VokabaApp(App):
 
             Clock.schedule_once(reset_btn, 0.35)
 
+
     def _advance_after_correct(self):
         """After a correct multiple choice answer, go to the next card/mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.multiple_choice_locked = False
         self.show_current_card()
+
 
     # ------------------------------------------------------------------
     # Connect pairs mode (match 5 pairs)
@@ -1965,6 +2358,15 @@ class VokabaApp(App):
         )
 
         if left_key == right_key:
+            # Correct pair: reward both vocab entries
+            delta = getattr(
+                labels,
+                "knowledge_delta_connect_pairs_correct_word",
+                0.06,
+            )
+            self._adjust_knowledge_level(left_entry, delta)
+            self._adjust_knowledge_level(right_entry, delta)
+
             self.connect_pairs_locked = True
             for btn in (left_btn, right_btn):
                 btn._matched = True
@@ -1987,6 +2389,15 @@ class VokabaApp(App):
                     lambda dt: self._connect_pairs_finish(), 0.3
                 )
         else:
+            # Wrong pair: penalty for both involved vocab entries
+            delta_wrong = getattr(
+                labels,
+                "knowledge_delta_connect_pairs_wrong_word",
+                -0.074,
+            )
+            self._adjust_knowledge_level(left_entry, delta_wrong)
+            self._adjust_knowledge_level(right_entry, delta_wrong)
+
             self.connect_pairs_locked = True
             for btn in (left_btn, right_btn):
                 btn.set_bg_color(APP_COLORS["danger"])
@@ -2007,16 +2418,18 @@ class VokabaApp(App):
 
             Clock.schedule_once(reset, 0.3)
 
+
     def _connect_pairs_finish(self):
         """After all 5 pairs are matched, go to the next card/mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
+
 
     # ------------------------------------------------------------------
     # Letter salad mode (click letters in the correct order)
@@ -2058,8 +2471,11 @@ class VokabaApp(App):
         scrambled_letters = letters[:]
         random.shuffle(scrambled_letters)
 
+        # State for this round
+        self.letter_salad_vocab = correct_vocab
         self.letter_salad_target_raw = raw_target
         self.letter_salad_target_clean = target_clean
+        self.letter_salad_is_short = len(target_clean) <= 4
         self.letter_salad_progress = 0
         self.letter_salad_typed = ""
         self.letter_salad_buttons = []
@@ -2185,6 +2601,7 @@ class VokabaApp(App):
         """Handle a single letter tile click in letter salad mode."""
         target = getattr(self, "letter_salad_target_clean", "")
         progress = getattr(self, "letter_salad_progress", 0)
+        vocab = getattr(self, "letter_salad_vocab", None)
 
         if not target:
             return
@@ -2203,6 +2620,14 @@ class VokabaApp(App):
             button.color = APP_COLORS["text"]
             button.disabled = True
 
+            # Knowledge: per correct letter
+            delta = getattr(
+                labels,
+                "knowledge_delta_letter_salad_per_correct_letter",
+                0.01,
+            )
+            self._adjust_knowledge_level(vocab, delta)
+
             self.letter_salad_progress = progress + 1
 
             typed = getattr(self, "letter_salad_typed", "")
@@ -2216,6 +2641,14 @@ class VokabaApp(App):
                     lambda dt: self._letter_salad_finish(), 0.3
                 )
         else:
+            # Wrong letter -> penalty
+            delta_wrong = getattr(
+                labels,
+                "knowledge_delta_letter_salad_wrong_letter",
+                -0.025,
+            )
+            self._adjust_knowledge_level(vocab, delta_wrong)
+
             button.set_bg_color(APP_COLORS["danger"])
             button.color = APP_COLORS["text"]
             Clock.schedule_once(
@@ -2226,26 +2659,36 @@ class VokabaApp(App):
                 0.25,
             )
 
+
     def _letter_salad_finish(self):
-        """After a correct word, go to the next vocab entry and mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        """After a correct word, update knowledge and go to the next vocab entry/mode."""
+        vocab = getattr(self, "letter_salad_vocab", None)
+        if getattr(self, "letter_salad_is_short", False):
+            bonus = getattr(
+                labels,
+                "knowledge_delta_letter_salad_short_word_bonus",
+                0.02,
+            )
+            self._adjust_knowledge_level(vocab, bonus)
+
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
     def letter_salad_skip(self, instance=None):
         """Skip the current vocab entry in letter salad mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
 
@@ -2502,6 +2945,17 @@ class VokabaApp(App):
         if item["finished"]:
             return
 
+        wrong_delta = getattr(
+            labels,
+            "knowledge_delta_syllable_wrong_word",
+            -0.5,
+        )
+        correct_delta = getattr(
+            labels,
+            "knowledge_delta_syllable_correct_word",
+            0.80,
+        )
+
         # Aktives Wort bestimmen / wechseln
         active = getattr(self, "syllable_salad_active_word_index", None)
 
@@ -2521,6 +2975,10 @@ class VokabaApp(App):
                     # anderes Wort mitten drin angeklickt -> als Fehler werten
                     button.set_bg_color(APP_COLORS["danger"])
                     button.color = APP_COLORS["text"]
+
+                    # Penalty für das Wort, dessen Silbe fälschlich gewählt wurde
+                    wrong_item = self.syllable_salad_items[word_index]
+                    self._adjust_knowledge_level(wrong_item.get("vocab"), wrong_delta)
 
                     def reset_btn(dt, b=button):
                         b.set_bg_color(APP_COLORS["card"])
@@ -2547,10 +3005,12 @@ class VokabaApp(App):
             lbl.markup = True
 
             if item["next_index"] >= len(item["chunks"]):
-                # Wort fertig
+                # Wort fertig -> Belohnung
                 item["finished"] = True
                 self.syllable_salad_finished_count += 1
                 lbl.color = APP_COLORS["success"]
+
+                self._adjust_knowledge_level(item.get("vocab"), correct_delta)
 
                 # aktives Wort freigeben, damit man ein neues starten kann
                 self.syllable_salad_active_word_index = None
@@ -2562,9 +3022,11 @@ class VokabaApp(App):
                         lambda dt: self._syllable_salad_finish(), 0.3
                     )
         else:
-            # falsche Silbe
+            # falsche Silbe -> Strafe für dieses Wort
             button.set_bg_color(APP_COLORS["danger"])
             button.color = APP_COLORS["text"]
+
+            self._adjust_knowledge_level(item.get("vocab"), wrong_delta)
 
             def reset_btn(dt, b=button):
                 b.set_bg_color(APP_COLORS["card"])
@@ -2575,26 +3037,25 @@ class VokabaApp(App):
 
     def _syllable_salad_finish(self):
         """Wenn alle Wörter korrekt gebaut wurden, gehe weiter."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
     def syllable_salad_skip(self, instance=None):
         """Überspringt den aktuellen Silben-Durchgang."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
-
 
 
     # ------------------------------------------------------------------
@@ -2671,6 +3132,40 @@ class VokabaApp(App):
         self.typing_feedback_label.markup = True  # wichtig für [color]-Tags
         card.add_widget(self.typing_feedback_label)
 
+
+        # Self-rating row (Anki-style) – zunächst versteckt
+        self.typing_selfrating_box = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+
+        if getattr(self, "self_rating_enabled", False):
+            buttons = [
+                ("self_rating_very_easy", "very_easy"),
+                ("self_rating_easy", "easy"),
+                ("self_rating_hard", "hard"),
+                ("self_rating_very_hard", "very_hard"),
+            ]
+            for label_name, quality in buttons:
+                text_label = getattr(labels, label_name, quality)
+                btn = self.make_secondary_button(
+                    text_label,
+                    size_hint=(0.25, 1),
+                    font_size=int(config["settings"]["gui"]["text_font_size"]),
+                )
+                # gleiche Logik wie bei Flashcards: passt knowledge_level an
+                btn.bind(on_press=lambda inst, q=quality: self.self_rate_card(q))
+                self.typing_selfrating_box.add_widget(btn)
+
+        # erst nach einer Antwort aktiv
+        self.typing_selfrating_box.opacity = 0
+        self.typing_selfrating_box.disabled = True
+
+        card.add_widget(self.typing_selfrating_box)
+
+
         # Buttons: Überprüfen / Überspringen
         btn_row = BoxLayout(
             orientation="horizontal",
@@ -2734,7 +3229,6 @@ class VokabaApp(App):
             self.typing_feedback_label.text = empty_text
             return
 
-        # Original-Lösung (nur der Teil vor der ersten Klammer ist relevant)
         # Original-Lösung: Hauptwort extrahieren (z.B. '(to) walk' -> 'walk')
         foreign_full = current_vocab.get("foreign_language", "") or ""
         solution_main = self._extract_main_lexeme(foreign_full)
@@ -2752,10 +3246,17 @@ class VokabaApp(App):
         is_correct = self._is_correct_typed_answer(user_input, current_vocab)
         has_accent_issue = any(v == "accent" for v in user_classes.values())
 
-
         self.typing_feedback_label.markup = True
 
         if is_correct:
+            # Knowledge update: big reward for correct typed answer
+            delta = getattr(
+                labels,
+                "knowledge_delta_typing_correct",
+                0.93,
+            )
+            self._adjust_knowledge_level(current_vocab, delta)
+
             # Antwort inhaltlich korrekt; Akzentfehler werden nur gelb markiert
             self.typing_feedback_label.color = APP_COLORS["success"]
 
@@ -2770,6 +3271,16 @@ class VokabaApp(App):
                     f"[b]Deine Eingabe:[/b] {colored_user}\n"
                     f"[b]Lösung:[/b] {colored_solution}"
                 )
+                anim = Animation(opacity=0.9, duration=0.1) + Animation(
+                    opacity=1, duration=0.1
+                )
+                anim.start(self.typing_feedback_label)
+
+                # Selbstbewertungs-Buttons freischalten
+                if hasattr(self, "typing_selfrating_box"):
+                    self.typing_selfrating_box.disabled = False
+                    self.typing_selfrating_box.opacity = 1
+
             else:
                 success_text = getattr(
                     labels,
@@ -2782,10 +3293,23 @@ class VokabaApp(App):
                 opacity=1, duration=0.1
             )
             anim.start(self.typing_feedback_label)
+            # Auch bei falscher Antwort: Selbstbewertung erlauben
+            if hasattr(self, "typing_selfrating_box"):
+                self.typing_selfrating_box.disabled = False
+                self.typing_selfrating_box.opacity = 1
 
-            Clock.schedule_once(lambda dt: self._typing_advance(), 0.35)
 
         else:
+            # Knowledge update: penalty per typed character
+            per_char = getattr(
+                labels,
+                "knowledge_delta_typing_wrong_per_char",
+                -0.01,
+            )
+            num_chars = len(user_input.strip())
+            if num_chars > 0:
+                self._adjust_knowledge_level(current_vocab, per_char * num_chars)
+
             # Inhaltlich falsch -> falsche Buchstaben rot, Akzentfehler gelb
             self.typing_feedback_label.color = APP_COLORS["text"]
             wrong_text = getattr(
@@ -2808,24 +3332,24 @@ class VokabaApp(App):
 
     def _typing_advance(self):
         """After a correct typed answer, go to the next vocab entry/mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
     def typing_skip(self, instance=None):
         """Skip the current vocab entry in typing mode."""
-        if self.current_vocab_index >= self.max_current_vocab_index - 1:
-            self.current_vocab_index = 0
+        if self.max_current_vocab_index > 1:
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
-            self.current_vocab_index += 1
+            self.current_vocab_index = 0
 
         self.is_back = False
-        self.learn_mode = random.choice(self.available_modes)
+        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
 
@@ -2987,6 +3511,7 @@ class VokabaApp(App):
                     "foreign_language": add_vocab_foreign_language,
                     "latin_language": add_vocab_third_column,
                     "info": add_vocab_additional_info,
+                    "knowledge_level": 0.0,
                 }
             )
         else:
@@ -2996,12 +3521,14 @@ class VokabaApp(App):
                     "foreign_language": add_vocab_foreign_language,
                     "latin_language": "",
                     "info": add_vocab_additional_info,
+                    "knowledge_level": 0.0,
                 }
             )
 
         save.save_to_vocab(vocab, "vocab/" + stack)
         log("added to stack")
         self.clear_inputs()
+
 
     # ------------------------------------------------------------------
     # Edit stack metadata (languages, filename)
@@ -3124,6 +3651,9 @@ class VokabaApp(App):
         """Screen for editing all vocab entries of a stack in a grid."""
         log("entered edit vocab menu")
         self.window.clear_widgets()
+
+        self.edit_vocab_original_list = vocab
+
         center_center = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
@@ -3193,6 +3723,7 @@ class VokabaApp(App):
         self.all_vocab_list = []
         self.current_vocab_index = 0
         self.is_back = False
+        self.self_rating_enabled = False  # legacy mode, no self-rating UI
 
         stack_vocab = save.load_vocab("vocab/" + stack)
         if type(stack_vocab) == tuple:
@@ -3238,12 +3769,16 @@ class VokabaApp(App):
 
     def edit_vocab_func(self, matrix, stack, instance=None):
         """Read the vocab grid back into a list and save it."""
+        latin_active = save.read_languages("vocab/" + stack)[3]
         vocab = self.read_vocab_from_grid(
-            matrix, save.read_languages("vocab/" + stack)[3]
+            matrix,
+            latin_active,
+            getattr(self, "edit_vocab_original_list", None),
         )
         save.save_to_vocab(vocab, "vocab/" + stack)
         log("saved vocab")
         self.select_stack(stack)
+
 
     def edit_metadata_func(self, stack, instance=None):
         """Persist edited metadata and rename the underlying CSV file."""
@@ -3320,11 +3855,16 @@ class VokabaApp(App):
 
         return False
 
-    def read_vocab_from_grid(self, textinput_matrix, latin_active):
-        """Convert a matrix of TextInputs back into a vocab list."""
+    def read_vocab_from_grid(self, textinput_matrix, latin_active, original_vocab_list=None):
+        """
+        Convert a matrix of TextInputs back into a vocab list.
+
+        original_vocab_list (optional) wird genutzt, um z.B. knowledge_level
+        pro Zeile beizubehalten. Neue Zeilen bekommen 0.0.
+        """
         vocab_list = []
 
-        for row in textinput_matrix:
+        for idx, row in enumerate(textinput_matrix):
             if latin_active:
                 own, foreign, latin, info = [ti.text.strip() for ti in row]
             else:
@@ -3335,16 +3875,24 @@ class VokabaApp(App):
             if not own and not foreign and not latin and not info:
                 continue
 
-            vocab_list.append(
-                {
-                    "own_language": own,
-                    "foreign_language": foreign,
-                    "latin_language": latin,
-                    "info": info,
-                }
-            )
+            entry = {
+                "own_language": own,
+                "foreign_language": foreign,
+                "latin_language": latin,
+                "info": info,
+            }
+
+            # NEU: knowledge_level aus der alten Liste übernehmen (falls vorhanden),
+            # sonst 0.0
+            if original_vocab_list is not None and idx < len(original_vocab_list):
+                entry["knowledge_level"] = original_vocab_list[idx].get("knowledge_level", 0.0)
+            else:
+                entry["knowledge_level"] = 0.0
+
+            vocab_list.append(entry)
 
         return vocab_list
+
 
     def build_vocab_grid(self, parent_layout, vocab_list, latin_active):
         """
