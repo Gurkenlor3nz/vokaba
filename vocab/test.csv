@@ -2,9 +2,9 @@
 # foreign_language=Englisch
 # latin_language=Latein
 # latin_active=False
-own_language,foreign_language,latin_language,info
-Haus,house,,Substantiv
-laufen,(to) walk,,Verb
-Baum,tree,,Substantiv
-haha,pl,,
-test,test,,test
+own_language,foreign_language,latin_language,info,knowledge_level
+Haus,house,,Substantiv,0.0
+laufen,(to) walk,,Verb,0.0
+Baum,tree,,Substantiv,0.0
+haha,pl,,,0.0
+test,test,,test,0.083

@@ -93,6 +93,16 @@ learn_flashcards_syllable_salad = "Silben-Modus"
 syllable_salad_instruction = "Klicke die Silben in der richtigen Reihenfolge an."
 syllable_salad_reshuffle = "Neu mischen"
 
+#----------------------------------------------------------------------------
+# Colour changer labels
+#----------------------------------------------------------------------------
+settings_theme_header = "Farbschema (Theme)"
+settings_theme_dark = "Dark"
+settings_theme_light = "Light"
+settings_theme_custom_header = "Individuelle Farben (optional)"
+settings_theme_primary = "Primärfarbe"
+settings_theme_accent = "Akzentfarbe"
+settings_theme_reset = "Zurücksetzen"
 
 # ---------------------------------------------------------------------------
 # Knowledge-level deltas für verschiedene Übungstypen

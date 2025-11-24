@@ -31,7 +31,9 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
+from kivy.uix.colorpicker import ColorPicker
+from kivy.uix.popup import Popup
+
 
 # Local modules
 import labels
@@ -47,22 +49,80 @@ global title_size_slider
 global three_columns_check
 config = save.load_settings()
 
+
 # ---------------------------------------------------------------------------
 # Theme configuration (colors, basic layout constants)
 # ---------------------------------------------------------------------------
 
-APP_COLORS = {
-    "bg":            (18 / 255, 18 / 255, 26 / 255, 1),   # app background
-    "primary":       (0.26, 0.60, 0.96, 1),               # main accent blue
-    "primary_dark":  (0.18, 0.45, 0.80, 1),
-    "accent":        (1.00, 0.76, 0.03, 1),               # secondary accent
-    "text":          (1, 1, 1, 1),                        # white text
-    "muted":         (0.75, 0.75, 0.80, 1),               # muted/secondary text
-    "card":          (0.16, 0.17, 0.23, 1),               # card backgrounds
-    "card_selected": (0.24, 0.25, 0.32, 1),               # selected card
-    "danger":        (0.90, 0.22, 0.21, 1),               # destructive actions
-    "success":       (0.20, 0.70, 0.30, 1),               # success/correct
+THEME_PRESETS = {
+    "dark": {
+        "bg":            (18 / 255, 18 / 255, 26 / 255, 1),
+        "primary":       (0.26, 0.60, 0.96, 1),
+        "primary_dark":  (0.18, 0.45, 0.80, 1),
+        "accent":        (1.00, 0.76, 0.03, 1),
+        "text":          (1, 1, 1, 1),
+        "muted":         (0.75, 0.75, 0.80, 1),
+        "card":          (0.16, 0.17, 0.23, 1),
+        "card_selected": (0.24, 0.25, 0.32, 1),
+        "danger":        (0.90, 0.22, 0.21, 1),
+        "success":       (0.20, 0.70, 0.30, 1),
+    },
+    "light": {
+        "bg":            (0.96, 0.97, 1.0, 1),
+        "primary":       (0.18, 0.45, 0.80, 1),
+        "primary_dark":  (0.12, 0.32, 0.60, 1),
+        "accent":        (1.00, 0.76, 0.03, 1),
+        "text":          (0.10, 0.10, 0.14, 1),
+        "muted":         (0.35, 0.38, 0.45, 1),
+        "card":          (1, 1, 1, 1),
+        "card_selected": (0.90, 0.93, 1.0, 1),
+        "danger":        (0.80, 0.16, 0.18, 1),
+        "success":       (0.18, 0.60, 0.28, 1),
+    },
 }
+
+# Aktuelle Farbpalette – wird beim Start aus config gesetzt
+APP_COLORS = THEME_PRESETS["dark"].copy()
+
+
+def apply_theme_from_config():
+    """
+    Liest das Theme aus config und baut APP_COLORS:
+      - preset: 'dark' / 'light' / 'custom'
+      - base_preset: Basis für 'custom'
+      - custom_colors: einzelne Farboverrides
+    """
+    global APP_COLORS, config
+
+    settings = config.setdefault("settings", {})
+    theme_cfg = settings.setdefault("theme", {})
+
+    preset_name = theme_cfg.get("preset", "dark")
+
+    if preset_name == "custom":
+        base_name = theme_cfg.get("base_preset", "dark")
+        base_palette = THEME_PRESETS.get(base_name, THEME_PRESETS["dark"]).copy()
+        custom_colors = theme_cfg.get("custom_colors", {})
+        for key, rgba in custom_colors.items():
+            try:
+                base_palette[key] = tuple(rgba)
+            except Exception:
+                pass
+        palette = base_palette
+    else:
+        palette = THEME_PRESETS.get(preset_name, THEME_PRESETS["dark"]).copy()
+        theme_cfg.setdefault("base_preset", preset_name)
+        theme_cfg.setdefault("custom_colors", {})
+
+    APP_COLORS.update(palette)
+
+    try:
+        Window.clearcolor = APP_COLORS["bg"]
+    except Exception:
+        pass
+
+    # Default-Werte zurück in die config schreiben
+    save.save_settings(config)
 
 
 class RoundedCard(BoxLayout):
@@ -157,11 +217,14 @@ class VokabaApp(App):
     """Main Kivy application class for the Vokaba vocabulary trainer."""
 
     def build(self):
-        Window.clearcolor = APP_COLORS["bg"]
+        # Theme aus config übernehmen (dark/light/custom)
+        apply_theme_from_config()
+
         self.window = FloatLayout()
         self.scroll = ScrollView(size_hint=(1, 1))
         self.main_menu()
         return self.window
+
 
     # ------------------------------------------------------------------
     # Shared styling helpers
@@ -265,8 +328,37 @@ class VokabaApp(App):
 
         return btn
 
+
+    def get_icon_path(self, icon_path: str) -> str:
+        """
+        Wählt automatisch die *_black.png-Variante, wenn ein helles Theme aktiv ist.
+
+        Beispiel:
+            'assets/settings_icon.png' -> 'assets/settings_icon_black.png'
+            (falls vorhanden und Theme ist 'light')
+        """
+        try:
+            theme_cfg = config.get("settings", {}).get("theme", {})
+            preset = theme_cfg.get("preset", "dark")
+            base = theme_cfg.get("base_preset", preset)
+            effective = base if preset == "custom" else preset
+        except Exception:
+            effective = "dark"
+
+        if effective == "light":
+            root, ext = os.path.splitext(icon_path)
+            alt = f"{root}_black{ext}"
+            if os.path.exists(alt):
+                return alt
+
+        return icon_path
+
+
+
     def make_icon_button(self, icon_path, on_press, size=dp(56), **kwargs):
-        """Create an icon-only button from an image asset."""
+        """Create an icon-only button from an image asset (theme-aware)."""
+        icon_path = self.get_icon_path(icon_path)
+
         btn = Button(
             size_hint=(None, None),
             size=(size, size),
@@ -278,15 +370,18 @@ class VokabaApp(App):
         btn.bind(on_press=on_press)
         return btn
 
+
     def style_textinput(self, ti: TextInput) -> TextInput:
-        """Apply a dark theme style to a TextInput."""
+        """Apply a theme-aware style to a TextInput (dark/light/custom)."""
         ti.background_normal = ""
         ti.background_active = ""
-        ti.background_color = (0.12, 0.12, 0.16, 1)
+        # Hintergrund folgt der Kartenfarbe
+        ti.background_color = APP_COLORS["card"]
         ti.foreground_color = APP_COLORS["text"]
         ti.cursor_color = APP_COLORS["accent"]
         ti.padding = [dp(8), dp(8), dp(8), dp(8)]
         return ti
+
 
     def _count_unique_vocab_pairs(self):
         """Return the number of unique (own_language, foreign_language) pairs."""
@@ -475,7 +570,7 @@ class VokabaApp(App):
             {
                 "label": labels.settings_title_font_size_slider_test_label,
                 "min": 10,
-                "max": 80,
+                "max": 100,
                 "value": float(config["settings"]["gui"]["title_font_size"]),
                 "callback": self.on_setting_changed(
                     ["settings", "gui", "title_font_size"], int
@@ -484,7 +579,7 @@ class VokabaApp(App):
             {
                 "label": labels.settings_font_size_slider,
                 "min": 10,
-                "max": 30,
+                "max": 45,
                 "value": float(config["settings"]["gui"]["text_font_size"]),
                 "callback": self.on_setting_changed(
                     ["settings", "gui", "text_font_size"], int
@@ -530,8 +625,145 @@ class VokabaApp(App):
             settings_content.add_widget(row_card)
 
 
+        settings_content.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
+
+
+        # ------------------------------------------------------------------
+        # Theme-Auswahl (Preset + individuelle Farben)
+        # ------------------------------------------------------------------
+
+        theme_header_text = getattr(
+            labels,
+            "settings_theme_header",
+        )
+
+        settings_content.add_widget(
+            self.make_title_label(
+                theme_header_text,
+                size_hint_y=None,
+                height=dp(40),
+            )
+        )
+
+        theme_card = RoundedCard(
+            orientation="vertical",
+            size_hint_y=None,
+            padding=dp(10),
+            spacing=dp(10),
+        )
+        # WICHTIG: Höhe automatisch an Kinder anpassen,
+        # sonst überlappt der nachfolgende Text
+        theme_card.bind(minimum_height=theme_card.setter("height"))
+
+        current_preset = config.get("settings", {}).get("theme", {}).get("preset", "dark")
+
+        # Preset-Buttons (Dark / Light)
+        preset_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(10),
+        )
+
+        dark_text = getattr(labels, "settings_theme_dark")
+        light_text = getattr(labels, "settings_theme_light")
+
+        dark_btn = self.make_secondary_button(
+            dark_text,
+            size_hint=(0.5, 1),
+        )
+        light_btn = self.make_secondary_button(
+            light_text,
+            size_hint=(0.5, 1),
+        )
+
+        # Aktives Theme optisch hervorheben
+        if current_preset == "dark":
+            dark_btn.set_bg_color(APP_COLORS["primary"])
+        elif current_preset == "light":
+            light_btn.set_bg_color(APP_COLORS["primary"])
+
+        dark_btn.bind(on_press=lambda inst: self.set_theme_preset("dark"))
+        light_btn.bind(on_press=lambda inst: self.set_theme_preset("light"))
+
+        preset_row.add_widget(dark_btn)
+        preset_row.add_widget(light_btn)
+        theme_card.add_widget(preset_row)
+
+        # Zeile 1: Primärfarbe + Akzentfarbe
+        custom_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(10),
+        )
+
+        primary_text = getattr(labels, "settings_theme_primary")
+        accent_text = getattr(labels, "settings_theme_accent")
+        reset_text = getattr(labels, "settings_theme_reset")
+
+        primary_btn = self.make_secondary_button(
+            primary_text,
+            size_hint=(0.5, 1),
+        )
+        primary_btn.set_bg_color(APP_COLORS["primary"])
+        primary_btn.bind(on_press=lambda inst: self.open_color_picker("primary"))
+
+        accent_btn = self.make_secondary_button(
+            accent_text,
+            size_hint=(0.5, 1),
+        )
+        accent_btn.set_bg_color(APP_COLORS["accent"])
+        accent_btn.bind(on_press=lambda inst: self.open_color_picker("accent"))
+
+        custom_row.add_widget(primary_btn)
+        custom_row.add_widget(accent_btn)
+        theme_card.add_widget(custom_row)
+
+        # Zeile 2: Primärer + sekundärer Hintergrund + Reset
+        bg_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(10),
+        )
+
+        bg_primary_text = getattr(labels, "settings_theme_bg_primary", "Hintergrund 1")
+        bg_secondary_text = getattr(labels, "settings_theme_bg_secondary", "Hintergrund 2")
+
+        bg_primary_btn = self.make_secondary_button(
+            bg_primary_text,
+            size_hint=(0.25, 1),
+        )
+        bg_primary_btn.set_bg_color(APP_COLORS["bg"])
+        bg_primary_btn.bind(on_press=lambda inst: self.open_color_picker("bg"))
+
+        bg_secondary_btn = self.make_secondary_button(
+            bg_secondary_text,
+            size_hint=(0.25, 1),
+        )
+        bg_secondary_btn.set_bg_color(APP_COLORS["card"])
+        bg_secondary_btn.bind(on_press=lambda inst: self.open_color_picker("card"))
+
+        reset_btn = self.make_secondary_button(
+            reset_text,
+            size_hint=(0.5, 1),  # so breit wie beide Hintergrund-Buttons zusammen
+        )
+        reset_btn.bind(on_press=self.reset_custom_colors)
+
+        bg_row.add_widget(bg_primary_btn)
+        bg_row.add_widget(bg_secondary_btn)
+        bg_row.add_widget(reset_btn)
+
+        theme_card.add_widget(bg_row)
+        settings_content.add_widget(theme_card)
+
+
+        # ------------------------------------------------------------------
         # Learning mode toggles
+        # ------------------------------------------------------------------
         modes_header_text = getattr(labels, "settings_modes_header")
+
 
         settings_content.add_widget(
             self.make_title_label(
@@ -1059,6 +1291,112 @@ class VokabaApp(App):
             log("config saved")
 
         return callback
+
+
+    def set_theme_preset(self, preset_name, instance=None):
+        """
+        Theme-Preset wechseln ('dark' / 'light'), config aktualisieren,
+        Custom-Farben zurücksetzen und Settings neu aufbauen.
+        """
+        global config
+
+        settings_dict = config.setdefault("settings", {})
+        theme_dict = settings_dict.setdefault("theme", {})
+        theme_dict["preset"] = preset_name
+        theme_dict["base_preset"] = preset_name
+        theme_dict["custom_colors"] = {}
+
+        save.save_settings(config)
+        apply_theme_from_config()
+
+        # Settings-Screen neu aufbauen, damit alles direkt aktualisiert ist
+        self.settings(None)
+
+
+    def set_custom_color(self, color_key: str, rgba, instance=None):
+        """
+        Einzelne Farbe (z.B. 'primary', 'accent') überschreiben und als 'custom'-Theme speichern.
+        """
+        global config
+
+        settings_dict = config.setdefault("settings", {})
+        theme_dict = settings_dict.setdefault("theme", {})
+
+        if "base_preset" not in theme_dict:
+            theme_dict["base_preset"] = theme_dict.get("preset", "dark")
+
+        theme_dict["preset"] = "custom"
+        custom = theme_dict.setdefault("custom_colors", {})
+        custom[color_key] = [float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])]
+
+        save.save_settings(config)
+        apply_theme_from_config()
+        self.settings(None)
+
+    def reset_custom_colors(self, instance=None):
+        """
+        Custom-Farben löschen und zurück zum Basis-Preset wechseln.
+        """
+        global config
+
+        settings_dict = config.setdefault("settings", {})
+        theme_dict = settings_dict.setdefault("theme", {})
+        base = theme_dict.get("base_preset", "dark")
+
+        theme_dict["preset"] = base
+        theme_dict["custom_colors"] = {}
+
+        save.save_settings(config)
+        apply_theme_from_config()
+        self.settings(None)
+
+    def open_color_picker(self, color_key: str, instance=None):
+        """
+        Öffnet einen ColorPicker in einem Popup, um eine Theme-Farbe zu wählen.
+        """
+        current_color = APP_COLORS.get(color_key, (1, 1, 1, 1))
+
+        picker = ColorPicker()
+        picker.color = current_color
+
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        content.add_widget(picker)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+
+        ok_text = getattr(labels, "colorpicker_ok", "Übernehmen")
+        cancel_text = getattr(labels, "colorpicker_cancel", "Abbrechen")
+
+        ok_btn = self.make_primary_button(ok_text, size_hint=(0.5, 1))
+        cancel_btn = self.make_secondary_button(cancel_text, size_hint=(0.5, 1))
+
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(ok_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(
+            title=f"Farbe wählen: {color_key}",
+            content=content,
+            size_hint=(0.9, 0.9),
+        )
+
+        def apply_and_close(*args):
+            self.set_custom_color(color_key, picker.color)
+            popup.dismiss()
+
+        def close_only(*args):
+            popup.dismiss()
+
+        ok_btn.bind(on_press=apply_and_close)
+        cancel_btn.bind(on_press=close_only)
+
+        popup.open()
+
 
     def add_stack_button_func(self, instance=None):
         """Validate the new stack form and create the stack on disk."""
