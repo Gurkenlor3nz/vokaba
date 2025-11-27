@@ -1,34 +1,49 @@
 ---PC---
-Anki-kompatiblität überprüfen
-TTS mit sprache, die irgendwie im csv ist.
+GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
+
+
 als exe für Win, bin oder bash für Linux (Portabel)
 tts einbauen
 Ocr erschließen
-Ki für vokabelpaare erschliess4en
+
+
 ---Android---
 Andriod app (vllt. Buildozer)
 
-Buchstabenschlange
+----- Menu_--------
+1 button für stapel
+-
+0=0.08
 
 
----Todos---
-Kein back button, wenn keine vokabeln verfügbar
-Leere box, wenn keine stapel verfügbar
-kein dashboard, sondern mehr daten "in your face"
-textboxen beim vokabeln bearbeiten gehen manchmal nicht
-SVG / CSV
-Vokabeln hinzufügen und lernen prominenter im menü, überforderung
-Komische rote punkte, wenn rechtsklick
-text in textboxen zu klein
-beim vokabel hinzufügen sind die kästen zu groß (adaptiv machen)
-nicht popup sondern kurz rote warnung unter textbox, sodass man direkt weitertippen kann
-import/export anstatt ordner zu öffnen
-kein speichern knopf in menüs nach unten, so groß wie textboxen
-Eigene sprache und fremsdsprache switch: erst fremdsprache dann eigene sprache
-progress bar oben, wie lange noch, bis man sein tägliches zeiel erreicht hat (kein reset bei exit und reenter)
-Standart vokabel-ziel so viel, wie man ungefähr in 10 minuten lernen kann
 
-nachschauen, wie updates installiert werden
+Sofort:
+
+Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
+
+ÜBUNGEN I <0.3
+×Karteikarte Hint
+×karteikarte Bewerten
+×Multiple choice 4
+×zuordnen
+
+ÜBUNGEN II0.3<>0.8
+×Buchstabensalat
+buchstabensuppe
+×Silben
+Karteikarte bewerten
+×Multiple choice
+Buchstabengitter
+×Zuordnen
+
+
+ÜBUNGENIII
+×Schreiben
+Buchstabengitter
+×Buchstabensalat
+buchstabensuppe
+×Silben
+
 
 
 
