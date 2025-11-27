@@ -202,7 +202,7 @@ about_discord_link_prefix = "Direkter Link:"
 
 # Dashboard / Stats
 main_stats_label_template = "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
-main_stats_hint = "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln."
+main_stats_hint = ""
 
 # Settings: Sessiongröße
 settings_session_size_slider = "Karten pro Lernsitzung"

@@ -10,6 +10,7 @@ import unicodedata
 import webbrowser
 import sys
 import subprocess
+import shutil
 
 # Third-party imports
 import yaml
@@ -36,7 +37,8 @@ from kivy.uix.slider import Slider
 from kivy.uix.textinput import TextInput
 from kivy.uix.colorpicker import ColorPicker
 from kivy.uix.popup import Popup
-
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.filechooser import FileChooserIconView
 
 # Local modules
 import labels
@@ -46,6 +48,7 @@ import save
 # Global configuration and simple shared state
 # ---------------------------------------------------------------------------
 
+Config.set("input", "mouse", "mouse,disable_multitouch")
 selected_stack = ""
 global vocab_current
 global title_size_slider
@@ -383,12 +386,18 @@ class VokabaApp(App):
         """Apply a theme-aware style to a TextInput (dark/light/custom)."""
         ti.background_normal = ""
         ti.background_active = ""
-        # etwas Kontrast zum Kartenhintergrund, damit die Felder sichtbar sind
         ti.background_color = APP_COLORS.get("card_selected", APP_COLORS["card"])
         ti.foreground_color = APP_COLORS["text"]
         ti.cursor_color = APP_COLORS["accent"]
         ti.padding = [dp(8), dp(8), dp(8), dp(8)]
+        ti.font_size = int(config["settings"]["gui"]["text_font_size"])
         return ti
+
+
+    def get_textinput_height(self) -> float:
+        """Adaptive TextInput height based on current font size."""
+        base = int(config["settings"]["gui"]["text_font_size"])
+        return dp(base * 2.0)
 
 
     def _count_unique_vocab_pairs(self):
@@ -456,6 +465,101 @@ class VokabaApp(App):
         stats["avg_knowledge"] = (total_knowledge / total_entries) if total_entries else 0.0
         return stats
 
+    # ------------------------------------------------------------------
+    # Daily goal helpers
+    # ------------------------------------------------------------------
+
+    def _init_daily_goal_defaults(self):
+        """Ensure daily goal + today's counters exist in config."""
+        global config
+        settings = config.setdefault("settings", {})
+        stats_cfg = config.setdefault("stats", {})
+
+        # Daily-Target dynamisch an Sessiongröße koppeln:
+        # ca. zwei Sessions ≈ 10 Minuten
+        session_default = int(get_in(config, ["settings", "session_size"], 20) or 20)
+        target = max(10, session_default * 2)
+        settings["daily_target_cards"] = target
+        save.save_settings(config)
+
+        today = datetime.now().date().isoformat()
+        if stats_cfg.get("daily_progress_date") != today:
+            stats_cfg["daily_progress_date"] = today
+            stats_cfg["daily_cards_done"] = 0
+            save.save_settings(config)
+
+
+    def _get_daily_progress_values(self):
+        """Return (done, target) for today's card goal."""
+        self._init_daily_goal_defaults()
+        stats_cfg = config.get("stats", {}) or {}
+        settings = config.get("settings", {}) or {}
+        done = int(stats_cfg.get("daily_cards_done", 0) or 0)
+        target = int(settings.get("daily_target_cards", 0) or 0)
+        if target <= 0:
+            target = 1
+        return done, target
+
+    def _update_daily_progress(self, steps: int = 1):
+        """Increase today's done counter and refresh progress bars."""
+        global config
+        self._init_daily_goal_defaults()
+        try:
+            steps = int(steps)
+        except (TypeError, ValueError):
+            steps = 1
+        if steps < 1:
+            steps = 1
+
+        stats_cfg = config.setdefault("stats", {})
+        today = datetime.now().date().isoformat()
+        if stats_cfg.get("daily_progress_date") != today:
+            stats_cfg["daily_progress_date"] = today
+            stats_cfg["daily_cards_done"] = 0
+
+        stats_cfg["daily_cards_done"] = int(
+            stats_cfg.get("daily_cards_done", 0) or 0
+        ) + steps
+        save.save_settings(config)
+        self._refresh_daily_progress_ui()
+
+    def _refresh_daily_progress_ui(self):
+        """Update all daily-goal progress bars/labels if they exist."""
+        try:
+            done, target = self._get_daily_progress_values()
+        except Exception as e:
+            log(f"daily progress read failed: {e}")
+            return
+
+        # Main menu bar
+        if hasattr(self, "daily_bar_main_menu") and self.daily_bar_main_menu:
+            self.daily_bar_main_menu.max = max(1, target)
+            self.daily_bar_main_menu.value = min(done, target)
+        if hasattr(self, "daily_label_main_menu") and self.daily_label_main_menu:
+            template = getattr(
+                labels,
+                "daily_goal_main_menu_label",
+                "Heutiges Ziel: {done}/{target} Karten",
+            )
+            self.daily_label_main_menu.text = template.format(
+                done=done, target=target
+            )
+
+        # Learn-screen bar
+        if hasattr(self, "daily_bar_learn") and self.daily_bar_learn:
+            self.daily_bar_learn.max = max(1, target)
+            self.daily_bar_learn.value = min(done, target)
+        if hasattr(self, "daily_label_learn") and self.daily_label_learn:
+            template = getattr(
+                labels,
+                "daily_goal_learn_label",
+                "Heute: {done}/{target} Karten",
+            )
+            self.daily_label_learn.text = template.format(
+                done=done, target=target
+            )
+
+
 
     # ------------------------------------------------------------------
     # Main menu
@@ -469,9 +573,14 @@ class VokabaApp(App):
         config = save.load_settings()
         Config.window_icon = "assets/vokaba_icon.png"
 
+        # ensure daily goal + today's counters exist
+        self._init_daily_goal_defaults()
+
         padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
 
+        # ------------------------------------------------------------------
         # Top-left: logo button (opens about screen)
+        # ------------------------------------------------------------------
         top_left = AnchorLayout(
             anchor_x="left",
             anchor_y="top",
@@ -485,7 +594,9 @@ class VokabaApp(App):
         top_left.add_widget(vokaba_logo)
         self.window.add_widget(top_left)
 
+        # ------------------------------------------------------------------
         # Top-right: settings icon
+        # ------------------------------------------------------------------
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
@@ -499,82 +610,111 @@ class VokabaApp(App):
         top_right.add_widget(settings_button)
         self.window.add_widget(top_right)
 
-        # Top-center: Welcome + Stats gemeinsam, damit nichts abgeschnitten wird
+        # ------------------------------------------------------------------
+        # Stats / Werte vorberechnen
+        # ------------------------------------------------------------------
+        overall_stats = self._compute_overall_stats()
+        stats_cfg = config.get("stats", {}) or {}
+
+        total_seconds = int(stats_cfg.get("total_learn_time_seconds", 0) or 0)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        time_str = f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
+
+        learned = overall_stats["learned_vocab"]
+        total_vocab = overall_stats["total_vocab"] or 1
+        progress_percent = (learned / total_vocab) * 100.0
+        avg_percent = overall_stats["avg_knowledge"] * 100.0
+
+        daily_done, daily_target = self._get_daily_progress_values()
+
+        # ------------------------------------------------------------------
+        # Oben mittig: Welcome-Text + Daily-Goal-Progressbar
+        # ------------------------------------------------------------------
         top_center = AnchorLayout(
             anchor_x="center",
             anchor_y="top",
-            padding=[0, 30 * padding_mul, 0, 0],
+            # unter Logo/Settings
+            padding=[0, 120 * padding_mul, 0, 0],
         )
 
-        # Vertikal-Box für Überschrift + Stats-Karte
-        top_box = BoxLayout(
+        top_center_box = BoxLayout(
             orientation="vertical",
             size_hint=(None, None),
-            size=(dp(700), dp(170)),  # etwas breiter und höher, damit alles Platz hat
-            spacing=dp(12),
+            size=(dp(700), dp(90)),
+            spacing=dp(8),
         )
 
-        # Welcome-Text
+        # Welcome-Text mittig
         welcome_label = self.make_title_label(
             labels.welcome_text,
             size_hint=(1, None),
-            height=dp(60),
+            height=dp(45),
         )
-        # Text soll die ganze Breite nutzen
+        welcome_label.halign = "center"
+        welcome_label.valign = "middle"
         welcome_label.bind(
             size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
         )
 
-        # Stats berechnen
-        overall_stats = self._compute_overall_stats()
-        stats_template = getattr(
-            labels,
-            "main_stats_label_template",
-            "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}",
+        # Daily-Goal-Progressbar mittig
+        progress_box = BoxLayout(
+            orientation="vertical",
+            size_hint=(1, None),
+            height=dp(40),
+            spacing=dp(4),
         )
-        stats_text = stats_template.format(
-            stacks=overall_stats["stacks"],
-            total=overall_stats["total_vocab"],
-            unique=overall_stats["unique_pairs"],
+        self.daily_label_main_menu = self.make_text_label(
+            "",
+            size_hint_y=None,
+            height=dp(20),
+        )
+        self.daily_label_main_menu.halign = "center"
+        self.daily_label_main_menu.bind(
+            size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
         )
 
-        # Stats-Karte direkt unter dem Welcome-Label
+        self.daily_bar_main_menu = ProgressBar(
+            max=max(1, daily_target),
+            value=min(daily_done, daily_target),
+            size_hint=(1, None),
+            height=dp(8),
+        )
+        progress_box.add_widget(self.daily_label_main_menu)
+        progress_box.add_widget(self.daily_bar_main_menu)
+
+        top_center_box.add_widget(welcome_label)
+        top_center_box.add_widget(progress_box)
+
+        top_center.add_widget(top_center_box)
+        self.window.add_widget(top_center)
+
+        # ------------------------------------------------------------------
+        # Linke Seite: Stats (ca. 1/3 Breite, tiefer, mehr Zeilenabstand)
+        # ------------------------------------------------------------------
+        left_anchor = AnchorLayout(
+            anchor_x="left",
+            anchor_y="top",
+            # deutlich unter Logo/Text/Progress
+            padding=[40 * padding_mul, 260 * padding_mul, 0, 0],
+        )
+
+        left_box = BoxLayout(
+            orientation="vertical",
+            size_hint=(0.35, None),   # ca. 1/3 Breite
+            height=dp(260),
+            spacing=dp(24),
+        )
+
         stats_card = RoundedCard(
             orientation="vertical",
             size_hint=(1, None),
-            height=dp(100),
-            padding=dp(10),
-            spacing=dp(6),
+            padding=dp(16),
+            spacing=dp(20),   # mehr Abstand zwischen den Zeilen
         )
+        stats_card.bind(minimum_height=stats_card.setter("height"))
 
-        stats_label = self.make_text_label(
-            stats_text,
-            size_hint_y=None,
-            height=dp(30),
-        )
-
-        hint_text = getattr(
-            labels,
-            "main_stats_hint",
-            "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln.",
-        )
-        hint_label = self.make_text_label(
-            hint_text,
-            size_hint_y=None,
-            height=dp(45),
-        )
-
-        stats_card.add_widget(stats_label)
-        stats_card.add_widget(hint_label)
-
-        # beides in die Box, Box in den Anchor, Anchor ins Fenster
-        top_box.add_widget(welcome_label)
-        top_box.add_widget(stats_card)
-        top_center.add_widget(top_box)
-        self.window.add_widget(top_center)
-
-
-        overall_stats = self._compute_overall_stats()
+        # Zeile 1: Stacks & Vokabeln
         stats_template = getattr(
             labels,
             "main_stats_label_template",
@@ -585,51 +725,65 @@ class VokabaApp(App):
             total=overall_stats["total_vocab"],
             unique=overall_stats["unique_pairs"],
         )
-
-        stats_card = RoundedCard(
-            orientation="vertical",
-            size_hint=(0.7, None),
-            height=dp(90),
-            padding=dp(10),
-            spacing=dp(6),
-        )
-
         stats_label = self.make_text_label(
             stats_text,
             size_hint_y=None,
-            height=dp(30),
+            height=dp(40),
         )
-
-        hint_text = getattr(
-            labels,
-            "main_stats_hint",
-            "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln.",
+        stats_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
         )
-        hint_label = self.make_text_label(
-            hint_text,
-            size_hint_y=None,
-            height=dp(30),
-        )
-
         stats_card.add_widget(stats_label)
-        stats_card.add_widget(hint_label)
 
-
-        # Center: card with scrollable list of vocab stacks (weiter unten)
-        center_anchor = AnchorLayout(
-            anchor_x="center",
-            anchor_y="center",
-            padding=[60 * padding_mul, 180 * padding_mul, 60 * padding_mul, 60 * padding_mul],
+        # Zeile 2: Fortschritt / Wissen
+        progress_template = getattr(
+            labels,
+            "main_stats_progress_line",
+            "Gelernte Vokabeln: {learned}/{total} ({percent:.0f} %) – Ø Wissen: {avg:.0f} %",
         )
-
-        card = RoundedCard(
-            orientation="vertical",
-            size_hint=(0.8, 0.8),
-            padding=dp(12),
-            spacing=dp(8),
+        progress_label = self.make_text_label(
+            progress_template.format(
+                learned=learned,
+                total=overall_stats["total_vocab"],
+                percent=progress_percent,
+                avg=avg_percent,
+            ),
+            size_hint_y=None,
+            height=dp(40),
         )
+        progress_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
+        )
+        stats_card.add_widget(progress_label)
 
-        # Scrollable list of files in vocab_path
+        # Zeile 3: Gesamtlernzeit + Ziel
+        time_template = getattr(
+            labels,
+            "main_stats_time_and_goal_line",
+            "Gesamtlernzeit: {time}   •   Heutiges Ziel: {done}/{target} Karten",
+        )
+        time_label = self.make_text_label(
+            time_template.format(
+                time=time_str,
+                done=daily_done,
+                target=daily_target,
+            ),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        time_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
+        )
+        stats_card.add_widget(time_label)
+
+        left_box.add_widget(stats_card)
+        left_anchor.add_widget(left_box)
+        self.window.add_widget(left_anchor)
+
+        # ------------------------------------------------------------------
+        # Rechte Seite: Card mit scrollbarer Liste der Vokabel-Stapel
+        # (ca. 2/3 Breite, etwas mehr nach links gezogen)
+        # ------------------------------------------------------------------
         vocab_path = getattr(labels, "vocab_path", "vocab")
         if not os.path.exists(vocab_path):
             os.makedirs(vocab_path)
@@ -644,29 +798,48 @@ class VokabaApp(App):
                 btn.bind(on_release=lambda btn, fname=name: self.select_stack(fname))
                 self.file_list.add_widget(btn)
 
+        # Leerer Zustand: Hinweis anzeigen
+        if len(self.file_list.children) == 0:
+            placeholder = self.make_text_label(
+                getattr(
+                    labels,
+                    "main_menu_no_stacks_hint",
+                    "Noch keine Stapel.\nErstelle deinen ersten mit dem + unten rechts.",
+                ),
+                halign="center",
+                size_hint_y=None,
+                height=dp(120),
+            )
+            placeholder.bind(
+                size=lambda inst, val: setattr(inst, "text_size", val)
+            )
+            self.file_list.add_widget(placeholder)
+
         self.scroll = ScrollView(size_hint=(1, 1), do_scroll_y=True)
         self.file_list.bind(minimum_width=self.file_list.setter("width"))
         self.scroll.add_widget(self.file_list)
+
+        right_anchor = AnchorLayout(
+            anchor_x="right",
+            anchor_y="center",
+            # mehr right-padding -> Card etwas weiter nach links
+            padding=[0, 200 * padding_mul, 140 * padding_mul, 60 * padding_mul],
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.6, 0.75),   # ca. 2/3 Breite
+            padding=dp(12),
+            spacing=dp(8),
+        )
         card.add_widget(self.scroll)
 
-        center_anchor.add_widget(card)
-        self.window.add_widget(center_anchor)
+        right_anchor.add_widget(card)
+        self.window.add_widget(right_anchor)
 
-        # Bottom-left: Dashboard-Button
-        bottom_left = AnchorLayout(
-            anchor_x="left",
-            anchor_y="bottom",
-            padding=30 * padding_mul,
-        )
-        dashboard_button = self.make_icon_button(
-            "assets/dashboard_icon.png",
-            on_press=self.open_dashboard,
-            size=dp(56),
-        )
-        bottom_left.add_widget(dashboard_button)
-        self.window.add_widget(bottom_left)
-
+        # ------------------------------------------------------------------
         # Bottom-right: add-stack FAB
+        # ------------------------------------------------------------------
         bottom_right = AnchorLayout(
             anchor_x="right",
             anchor_y="bottom",
@@ -680,7 +853,9 @@ class VokabaApp(App):
         bottom_right.add_widget(add_stack_button)
         self.window.add_widget(bottom_right)
 
+        # ------------------------------------------------------------------
         # Bottom-center: "learn random stacks" button
+        # ------------------------------------------------------------------
         self.recompute_available_modes()
         bottom_center = AnchorLayout(
             anchor_x="center",
@@ -703,6 +878,9 @@ class VokabaApp(App):
         )
         bottom_center.add_widget(learn_button)
         self.window.add_widget(bottom_center)
+
+        # nach Aufbau UI Text der Daily-Bar aktualisieren
+        self._refresh_daily_progress_ui()
 
 
     # ------------------------------------------------------------------
@@ -1593,32 +1771,71 @@ class VokabaApp(App):
         grid = GridLayout(cols=1, spacing=dp(12), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
-        # Ordner mit Vokabel-SVGs öffnen
-        open_folder_text = getattr(
-            labels,
-            "open_stack_folder_button_text",
-            "Ordner mit Vokabel-SVGs öffnen",
-        )
-        open_folder_button = self.make_secondary_button(
-            open_folder_text,
-            size_hint_y=None,
-            height=dp(60),
-        )
-        open_folder_button.bind(
-            on_press=lambda instance: self.open_stack_folder(stack)
-        )
-        grid.add_widget(open_folder_button)
+        # Aktionen für diesen Stack (stark fokussiert auf Add + Learn)
 
-        # Edit vocab
-        edit_vocab_button = self.make_secondary_button(
-            labels.edit_vocab_button_text,
+        # Add vocab (prominent)
+        add_vocab_button = self.make_primary_button(
+            labels.add_vocab_button_text,
+            size_hint_y=None,
+            height=dp(64),
+        )
+        add_vocab_button.bind(
+            on_press=lambda instance: self.add_vocab(stack, vocab_current)
+        )
+        grid.add_widget(add_vocab_button)
+
+        # Learn this stack (prominent)
+        self.recompute_available_modes()
+        learn_vocab_button = self.make_primary_button(
+            labels.learn_stack_vocab_button_text,
+            size_hint_y=None,
+            height=dp(64),
+        )
+        learn_vocab_button.bind(
+            on_press=lambda instance: self.learn(
+                stack, mode=random.choice(self.available_modes)
+            )
+        )
+        grid.add_widget(learn_vocab_button)
+
+        # Import / Export – zwei Buttons nebeneinander
+        import_export_row = BoxLayout(
+            orientation="horizontal",
             size_hint_y=None,
             height=dp(60),
+            spacing=dp(8),
         )
-        edit_vocab_button.bind(
-            on_press=lambda instance: self.edit_vocab(stack, vocab_current)
+
+        import_text = getattr(
+            labels,
+            "stack_import_button_text",
+            "Importieren …",
         )
-        grid.add_widget(edit_vocab_button)
+        export_text = getattr(
+            labels,
+            "stack_export_button_text",
+            "Exportieren …",
+        )
+
+        import_button = self.make_secondary_button(
+            import_text,
+            size_hint=(0.5, 1),
+        )
+        import_button.bind(
+            on_press=lambda instance: self.import_stack_dialog(stack)
+        )
+
+        export_button = self.make_secondary_button(
+            export_text,
+            size_hint=(0.5, 1),
+        )
+        export_button.bind(
+            on_press=lambda instance: self.export_stack_dialog(stack)
+        )
+
+        import_export_row.add_widget(import_button)
+        import_export_row.add_widget(export_button)
+        grid.add_widget(import_export_row)
 
         # Edit metadata
         edit_metadata_button = self.make_secondary_button(
@@ -1631,7 +1848,7 @@ class VokabaApp(App):
         )
         grid.add_widget(edit_metadata_button)
 
-        # Delete stack
+        # Delete stack (bewusst zuletzt)
         delete_stack_button = self.make_danger_button(
             labels.delete_stack_button,
             size_hint_y=None,
@@ -1642,31 +1859,6 @@ class VokabaApp(App):
         )
         grid.add_widget(delete_stack_button)
 
-
-        # Add vocab
-        add_vocab_button = self.make_primary_button(
-            labels.add_vocab_button_text,
-            size_hint_y=None,
-            height=dp(60),
-        )
-        add_vocab_button.bind(
-            on_press=lambda instance: self.add_vocab(stack, vocab_current)
-        )
-        grid.add_widget(add_vocab_button)
-
-        # Learn this stack
-        self.recompute_available_modes()
-        learn_vocab_button = self.make_primary_button(
-            labels.learn_stack_vocab_button_text,
-            size_hint_y=None,
-            height=dp(60),
-        )
-        learn_vocab_button.bind(
-            on_press=lambda instance: self.learn(
-                stack, mode=random.choice(self.available_modes)
-            )
-        )
-        grid.add_widget(learn_vocab_button)
 
         scroll.add_widget(grid)
         card.add_widget(scroll)
@@ -1703,6 +1895,152 @@ class VokabaApp(App):
                 subprocess.Popen(["xdg-open", target])
         except Exception as e:
             log(f"Could not open folder '{target}': {e}")
+
+
+    def export_stack_dialog(self, stack, instance=None):
+        """Datei-Dialog zum Export eines Stapels als CSV."""
+        vocab_root = getattr(labels, "vocab_path", "vocab")
+        src = os.path.join(vocab_root, stack)
+
+        default_path = os.path.expanduser("~")
+        if not os.path.isdir(default_path):
+            default_path = os.path.abspath(vocab_root)
+
+        chooser = FileChooserIconView(
+            path=default_path,
+            dirselect=True,
+        )
+
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        content.add_widget(chooser)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+
+        cancel_text = getattr(labels, "import_export_cancel", "Abbrechen")
+        export_text = getattr(labels, "stack_export_button_text", "Exportieren …")
+
+        cancel_btn = self.make_secondary_button(
+            cancel_text,
+            size_hint=(0.5, 1),
+        )
+        ok_btn = self.make_primary_button(
+            export_text,
+            size_hint=(0.5, 1),
+        )
+
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(ok_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(
+            title=getattr(labels, "stack_export_popup_title", "Stapel exportieren"),
+            content=content,
+            size_hint=(0.9, 0.9),
+        )
+
+        def _do_export(*args):
+            # Ordner aus Auswahl nehmen, sonst aktuellen Pfad
+            target_dir = None
+            if chooser.selection:
+                sel = chooser.selection[0]
+                if os.path.isdir(sel):
+                    target_dir = sel
+                else:
+                    target_dir = os.path.dirname(sel)
+            if not target_dir:
+                target_dir = chooser.path
+
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+                dest = os.path.join(target_dir, os.path.basename(stack))
+                shutil.copy2(src, dest)
+                log(f"exported stack '{stack}' to '{dest}'")
+                popup.dismiss()
+            except Exception as e:
+                log(f"export_stack_dialog failed: {e}")
+                popup.dismiss()
+
+        ok_btn.bind(on_press=_do_export)
+        cancel_btn.bind(on_press=lambda *a: popup.dismiss())
+        popup.open()
+
+
+    def import_stack_dialog(self, stack, instance=None):
+        """Datei-Dialog zum Import in diesen Stapel (CSV auswählen)."""
+        vocab_root = getattr(labels, "vocab_path", "vocab")
+        target = os.path.join(vocab_root, stack)
+
+        default_path = os.path.expanduser("~")
+        if not os.path.isdir(default_path):
+            default_path = os.path.abspath(vocab_root)
+
+        chooser = FileChooserIconView(
+            path=default_path,
+            dirselect=False,
+            filters=["*.csv"],
+        )
+
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        content.add_widget(chooser)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+
+        cancel_text = getattr(labels, "import_export_cancel", "Abbrechen")
+        import_text = getattr(labels, "stack_import_button_text", "Importieren …")
+
+        cancel_btn = self.make_secondary_button(
+            cancel_text,
+            size_hint=(0.5, 1),
+        )
+        ok_btn = self.make_primary_button(
+            import_text,
+            size_hint=(0.5, 1),
+        )
+
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(ok_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(
+            title=getattr(labels, "stack_import_popup_title", "CSV importieren"),
+            content=content,
+            size_hint=(0.9, 0.9),
+        )
+
+        def _do_import(*args):
+            if not chooser.selection:
+                return
+            src_file = chooser.selection[0]
+            try:
+                # Sicherung der alten Datei
+                if os.path.exists(target):
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup = target + ".backup_" + timestamp
+                    shutil.copy2(target, backup)
+                    log(f"created backup '{backup}' before import")
+
+                shutil.copy2(src_file, target)
+                log(f"imported '{src_file}' into '{target}'")
+                popup.dismiss()
+                # Stack-View neu laden
+                self.select_stack(stack)
+            except Exception as e:
+                log(f"import_stack_dialog failed: {e}")
+                popup.dismiss()
+
+        ok_btn.bind(on_press=_do_import)
+        cancel_btn.bind(on_press=lambda *a: popup.dismiss())
+        popup.open()
 
 
     def delete_stack_confirmation(self, stack, instance=None):
@@ -1838,30 +2176,49 @@ class VokabaApp(App):
         )
 
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(
-            cols=1,
+        form_layout = BoxLayout(
+            orientation="vertical",
             spacing=dp(10),
             padding=dp(8),
             size_hint_y=None,
         )
         form_layout.bind(minimum_height=form_layout.setter("height"))
 
+        input_height = self.get_textinput_height()
+
         # Stack filename
         form_layout.add_widget(
             self.make_text_label(
                 labels.add_stack_filename,
                 size_hint_y=None,
-                height=dp(40),
+                height=dp(24),
             )
         )
         self.stack_input = self.style_textinput(
             TextInput(
-            size_hint_y=None,
-            height=dp(60),
-            multiline=False,
+                size_hint=(1, None),
+                height=input_height,
+                multiline=False,
             )
         )
         form_layout.add_widget(self.stack_input)
+
+        # Foreign language (zuerst)
+        form_layout.add_widget(
+            self.make_text_label(
+                labels.add_foreign_language,
+                size_hint_y=None,
+                height=dp(24),
+            )
+        )
+        self.foreign_language_input = self.style_textinput(
+            TextInput(
+                size_hint=(1, None),
+                height=input_height,
+                multiline=False,
+            )
+        )
+        form_layout.add_widget(self.foreign_language_input)
 
         # Own language
         form_layout.add_widget(
@@ -1873,29 +2230,12 @@ class VokabaApp(App):
         )
         self.own_language_input = self.style_textinput(
             TextInput(
-            size_hint_y=None,
-            height=dp(60),
-            multiline=False,
+                size_hint=(1, None),
+                height=input_height,
+                multiline=False,
             )
         )
-
         form_layout.add_widget(self.own_language_input)
-
-        # Foreign language
-        form_layout.add_widget(
-            self.make_text_label(
-                labels.add_foreign_language,
-                size_hint_y=None,
-                height=dp(24),
-            )
-        )
-        self.foreign_language_input = self.style_textinput(
-            TextInput(
-            size_hint_y=None,
-            height=dp(60),
-            multiline=False,
-        ))
-        form_layout.add_widget(self.foreign_language_input)
 
         # Optional third column (Latin)
         row = BoxLayout(
@@ -1924,7 +2264,7 @@ class VokabaApp(App):
         add_stack_button = self.make_primary_button(
             labels.add_stack_button_text,
             size_hint=(1, None),
-            height=dp(60),
+            height=input_height,
         )
         add_stack_button.bind(on_press=self.add_stack_button_func)
         form_layout.add_widget(add_stack_button)
@@ -1947,6 +2287,7 @@ class VokabaApp(App):
         )
         self.bottom_center.add_widget(self.add_stack_error_label)
         self.window.add_widget(self.bottom_center)
+
 
     def on_setting_changed(self, key_path, cast_type):
         """
@@ -2131,52 +2472,87 @@ class VokabaApp(App):
         self.learn_mode = None
         self.self_rating_enabled = True  # Anki-style Selbstkontrolle
 
+        # Tagesziel sicher initialisieren (kein Reset bei Re-Enter am selben Tag)
+        self._init_daily_goal_defaults()
+
         self.window.clear_widgets()
 
         # Startzeit der Session (für Dashboard-Lernzeit)
         self.session_start_time = datetime.now()
 
-        # Static container for all learning screens
-        self.learn_area = FloatLayout()
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
 
-        # Static container for all learning screens
+        # Hauptcontainer für Lernen (Header + Inhalt untereinander)
         self.learn_area = FloatLayout()
         self.window.add_widget(self.learn_area)
 
-        # Content area that is replaced per card/mode
-        self.learn_content = AnchorLayout(
-            anchor_x="center",
-            anchor_y="center",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
-        )
-        self.learn_area.add_widget(self.learn_content)
-
-        # Header label (optional title above learning content)
+        # --- Header oben: Titel + Tagesziel-Progressbar -----------------
         self.header_anchor = AnchorLayout(
             anchor_x="center",
             anchor_y="top",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            size_hint=(1, 0.22),
+            pos_hint={"x": 0, "top": 1},
+            padding=30 * padding_mul,
         )
+
+        header_box = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            size=(dp(900), dp(110)),
+            spacing=dp(6),
+        )
+
         self.header_label = Label(
             text="",
             font_size=int(config["settings"]["gui"]["title_font_size"]),
-            size_hint=(None, None),
-            size=(80, 40),
+            size_hint=(1, None),
+            height=dp(40),
+            color=APP_COLORS["text"],
         )
-        self.header_anchor.add_widget(self.header_label)
+        self.header_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", val)
+        )
+        header_box.add_widget(self.header_label)
+
+        self.daily_label_learn = self.make_text_label(
+            "",
+            size_hint_y=None,
+            height=dp(22),
+        )
+        self.daily_bar_learn = ProgressBar(
+            max=1,
+            value=0,
+            size_hint=(1, None),
+            height=dp(8),
+        )
+        daily_box = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(4),
+        )
+        daily_box.add_widget(self.daily_label_learn)
+        daily_box.add_widget(self.daily_bar_learn)
+        header_box.add_widget(daily_box)
+
+        self.header_anchor.add_widget(header_box)
         self.learn_area.add_widget(self.header_anchor)
+
+        # --- Inhalt unten: hier landen die eigentlichen Lernmodi --------
+        self.learn_content = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            size_hint=(1, 0.78),
+            pos_hint={"x": 0, "y": 0},
+            padding=30 * padding_mul,
+        )
+        self.learn_area.add_widget(self.learn_content)
 
         # Top-right back button (saves knowledge levels before leaving)
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=30 * padding_mul,
         )
         back_button = self.make_icon_button(
             "assets/back_button.png",
@@ -2208,7 +2584,6 @@ class VokabaApp(App):
 
         for filename in filenames:
             data = save.load_vocab(filename)
-            # wie im restlichen Code: load_vocab kann Liste oder Tuple liefern
             if isinstance(data, tuple):
                 vocab_list = data[0]
             else:
@@ -2227,12 +2602,9 @@ class VokabaApp(App):
             )
 
             for entry in vocab_list:
-                # Zuordnung: welches Entry gehört zu welcher Datei?
                 self.entry_to_stack_file[id(entry)] = filename
-                # Safety: knowledge_level immer vorhanden
                 if "knowledge_level" not in entry:
                     entry["knowledge_level"] = 0.0
-                # evtl. alte Helper-Felder loswerden
                 entry.pop("_stack_file", None)
 
                 self.all_vocab_list.append(entry)
@@ -2240,25 +2612,83 @@ class VokabaApp(App):
         random.shuffle(self.all_vocab_list)
         self.max_current_vocab_index = len(self.all_vocab_list)
 
+        # Kein Dead-End mehr, wenn keine Vokabeln existieren
         if self.max_current_vocab_index == 0:
             log("no vocab to learn")
             self.window.clear_widgets()
-            msg_anchor = AnchorLayout(
+            padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
+            center = AnchorLayout(
                 anchor_x="center",
                 anchor_y="center",
+                padding=40 * padding_mul,
             )
-            msg_anchor.add_widget(
-                Label(
-                    text=labels.no_vocab_warning,
-                    font_size=int(
-                        config["settings"]["gui"]["title_font_size"]
-                    ),
-                )
+
+            card = RoundedCard(
+                orientation="vertical",
+                size_hint=(0.8, 0.5),
+                padding=dp(16),
+                spacing=dp(12),
             )
-            self.window.add_widget(msg_anchor)
+
+            msg_label = self.make_title_label(
+                labels.no_vocab_warning,
+                size_hint_y=None,
+                height=dp(60),
+            )
+            card.add_widget(msg_label)
+
+            hint_text = getattr(
+                labels,
+                "no_vocab_hint_create_stack",
+                "Lege zuerst einen Stapel an und füge Vokabeln hinzu.",
+            )
+            hint_label = self.make_text_label(
+                hint_text,
+                size_hint_y=None,
+                height=dp(40),
+            )
+            card.add_widget(hint_label)
+
+            btn_row = BoxLayout(
+                orientation="horizontal",
+                size_hint_y=None,
+                height=dp(50),
+                spacing=dp(12),
+            )
+
+            back_text = getattr(
+                labels,
+                "no_vocab_back_to_menu",
+                "Zurück zum Hauptmenü",
+            )
+            new_stack_text = getattr(
+                labels,
+                "no_vocab_new_stack",
+                "Neuen Stapel anlegen",
+            )
+
+            back_btn = self.make_secondary_button(
+                back_text,
+                size_hint=(0.5, 1),
+            )
+            back_btn.bind(on_press=lambda inst: self.main_menu())
+
+            new_stack_btn = self.make_primary_button(
+                new_stack_text,
+                size_hint=(0.5, 1),
+            )
+            new_stack_btn.bind(on_press=self.add_stack)
+
+            btn_row.add_widget(back_btn)
+            btn_row.add_widget(new_stack_btn)
+            card.add_widget(btn_row)
+
+            center.add_widget(card)
+            self.window.add_widget(center)
             return
 
-        # Session-Zähler initialisieren (Tagesziel/Sessiongroße)
+        # Session-Zähler initialisieren (Tagesziel/Sessiongröße)
         self.session_cards_total = int(
             get_in(config, ["settings", "session_size"], 20) or 20
         )
@@ -2275,8 +2705,10 @@ class VokabaApp(App):
         self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
         self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
 
-        self.show_current_card()
+        # Tagesziel-Balken im Header initial updaten
+        self._refresh_daily_progress_ui()
 
+        self.show_current_card()
 
 
     # ------------------------------------------------------------------
@@ -2482,10 +2914,15 @@ class VokabaApp(App):
         elif was_correct is False:
             self.session_wrong = getattr(self, "session_wrong", 0) + steps
 
+        # WICHTIG: Tagesziel wird NICHT mehr pro Schritt erhöht,
+        # sondern nur noch in _adjust_knowledge_level, wenn eine Vokabel
+        # den Schwellenwert überschreitet.
+
         if self.session_cards_done >= self.session_cards_total:
             self.show_session_summary()
             return True
         return False
+
 
     def show_session_summary(self):
         """Kleiner Abschluss-Screen für eine Lernsitzung."""
@@ -4725,13 +5162,13 @@ class VokabaApp(App):
         log("entered add vocab")
         self.window.clear_widgets()
 
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
         # Top-right: back button
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=30 * padding_mul,
         )
         back_button = self.make_icon_button(
             "assets/back_button.png",
@@ -4744,60 +5181,52 @@ class VokabaApp(App):
         center_center = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
-            padding=80 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=40 * padding_mul,
         )
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(
-            cols=1,
-            spacing=15,
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+        form_layout = BoxLayout(
+            orientation="vertical",
+            spacing=dp(12),
+            padding=dp(8),
             size_hint_y=None,
         )
         form_layout.bind(minimum_height=form_layout.setter("height"))
+
+        input_height = self.get_textinput_height()
+
+        # Foreign language (zuerst)
+        form_layout.add_widget(
+            self.make_title_label(
+                labels.add_foreign_language,
+                size_hint_y=None,
+                height=dp(32),
+            )
+        )
+        self.add_foreign_language = self.style_textinput(
+            TextInput(
+                size_hint=(1, None),
+                height=input_height,
+                multiline=False,
+            )
+        )
+        form_layout.add_widget(self.add_foreign_language)
 
         # Own language
         form_layout.add_widget(
             self.make_title_label(
                 labels.add_own_language,
                 size_hint_y=None,
-                height=dp(40),
+                height=dp(32),
             )
         )
-        form_layout.add_widget(Label(text=""))
         self.add_own_language = self.style_textinput(
             TextInput(
-                size_hint_y=None,
-                height=60,
+                size_hint=(1, None),
+                height=input_height,
                 multiline=False,
             )
         )
         form_layout.add_widget(self.add_own_language)
-
-        form_layout.add_widget(Label(text="\n\n\n\n"))
-
-        # Foreign language
-        form_layout.add_widget(
-            self.make_title_label(
-                labels.add_foreign_language,
-                size_hint_y=None,
-                height=dp(40),
-            )
-        )
-        form_layout.add_widget(Label(text=""))
-        self.add_foreign_language = self.style_textinput(
-            TextInput(
-                size_hint_y=None,
-                height=60,
-                multiline=False,
-            )
-        )
-        form_layout.add_widget(self.add_foreign_language)
-
-        form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Optional third column
         self.third_column_input = None
@@ -4806,45 +5235,53 @@ class VokabaApp(App):
                 self.make_title_label(
                     labels.add_third_column,
                     size_hint_y=None,
-                    height=dp(40),
+                    height=dp(32),
                 )
             )
-            form_layout.add_widget(Label(text=""))
             self.third_column_input = self.style_textinput(
                 TextInput(
-                    size_hint_y=None,
-                    height=60,
+                    size_hint=(1, None),
+                    height=input_height,
                     multiline=False,
                 )
             )
             form_layout.add_widget(self.third_column_input)
-
-        form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Additional info
         form_layout.add_widget(
             self.make_title_label(
                 labels.add_additional_info,
                 size_hint_y=None,
-                height=dp(40),
+                height=dp(32),
             )
         )
-        form_layout.add_widget(Label(text=""))
         self.add_additional_info = self.style_textinput(
             TextInput(
-                size_hint_y=None,
-                height=60,
+                size_hint=(1, None),
+                height=input_height,
                 multiline=False,
             )
         )
         form_layout.add_widget(self.add_additional_info)
 
+        # Inline error label (statt Popup)
+        self.add_vocab_error_label = Label(
+            text="",
+            color=APP_COLORS["danger"],
+            font_size=int(config["settings"]["gui"]["text_font_size"]),
+            size_hint_y=None,
+            height=dp(26),
+        )
+        self.add_vocab_error_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", val)
+        )
+        form_layout.add_widget(self.add_vocab_error_label)
+
         # Add button
-        form_layout.add_widget(Label(text="\n\n\n\n"))
         self.add_vocab_button = self.make_primary_button(
             labels.add_vocabulary_button_text,
             size_hint=(1, None),
-            height=dp(48),
+            height=input_height,
         )
         self.add_vocab_button.bind(
             on_press=lambda instance: self.add_vocab_button_func(
@@ -4855,16 +5292,16 @@ class VokabaApp(App):
 
         if self.third_column_input:
             self.widgets_add_vocab = [
-                self.add_own_language,
                 self.add_foreign_language,
+                self.add_own_language,
                 self.third_column_input,
                 self.add_additional_info,
                 self.add_vocab_button,
             ]
         else:
             self.widgets_add_vocab = [
-                self.add_own_language,
                 self.add_foreign_language,
+                self.add_own_language,
                 self.add_additional_info,
                 self.add_vocab_button,
             ]
@@ -4874,6 +5311,7 @@ class VokabaApp(App):
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
+
 
 
     def add_vocab_button_func(self, vocab, stack, instance=None):
@@ -4896,35 +5334,11 @@ class VokabaApp(App):
                 "add_vocab_both_languages_required",
                 "Bitte fülle beide Sprachfelder aus.",
             )
-            ok_text = getattr(labels, "ok", "OK")
-
-            content = BoxLayout(
-                orientation="vertical",
-                spacing=dp(8),
-                padding=dp(12),
-            )
-            content.add_widget(
-                self.make_text_label(
-                    msg,
-                    size_hint_y=None,
-                    height=dp(40),
-                )
-            )
-            ok_btn = self.make_primary_button(
-                ok_text,
-                size_hint=(1, None),
-                height=dp(40),
-            )
-            content.add_widget(ok_btn)
-
-            popup = Popup(
-                title="",
-                content=content,
-                size_hint=(0.6, 0.3),
-            )
-            ok_btn.bind(on_press=lambda *_: popup.dismiss())
-            popup.open()
+            # show inline error instead of popup
+            if hasattr(self, "add_vocab_error_label"):
+                self.add_vocab_error_label.text = msg
             return
+
 
         if self.third_column_input:
             vocab.append(
@@ -4949,6 +5363,10 @@ class VokabaApp(App):
 
         save.save_to_vocab(vocab, "vocab/" + stack)
         log("added to stack")
+
+        if hasattr(self, "add_vocab_error_label"):
+            self.add_vocab_error_label.text = ""
+
         self.clear_inputs()
 
 
@@ -4962,20 +5380,18 @@ class VokabaApp(App):
         self.window.clear_widgets()
         metadata = save.read_languages("vocab/" + stack)
 
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
         center_center = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
-            padding=80 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=80 * padding_mul,
         )
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(
-            cols=1,
-            spacing=15,
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+        form_layout = BoxLayout(
+            orientation="vertical",
+            spacing=dp(12),
+            padding=dp(8),
             size_hint_y=None,
         )
         form_layout.bind(minimum_height=form_layout.setter("height"))
@@ -4984,9 +5400,7 @@ class VokabaApp(App):
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=30 * padding_mul,
         )
         back_button = self.make_icon_button(
             "assets/back_button.png",
@@ -4996,86 +5410,72 @@ class VokabaApp(App):
         top_right.add_widget(back_button)
         self.window.add_widget(top_right)
 
-        # spacer for save button
-        spacer_label = Label(text="\n\n\n\n\n\n\n\n\n")
-        form_layout.add_widget(spacer_label)
+        input_height = self.get_textinput_height()
+
+        # Foreign language name (zuerst)
+        form_layout.add_widget(
+            self.make_title_label(
+                labels.add_foreign_language,
+                size_hint_y=None,
+                height=dp(32),
+            )
+        )
+        self.edit_foreign_language_textbox = self.style_textinput(
+            TextInput(
+                size_hint=(1, None),
+                height=input_height,
+                multiline=False,
+                text=metadata[1],
+            )
+        )
+        form_layout.add_widget(self.edit_foreign_language_textbox)
 
         # Own language name
         form_layout.add_widget(
             self.make_title_label(
                 labels.add_own_language,
                 size_hint_y=None,
-                height=dp(40),
+                height=dp(32),
             )
         )
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
         self.edit_own_language_textbox = self.style_textinput(
             TextInput(
-                size_hint_y=None,
-                height=60,
+                size_hint=(1, None),
+                height=input_height,
                 multiline=False,
                 text=metadata[0],
             )
         )
         form_layout.add_widget(self.edit_own_language_textbox)
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
-
-        # Foreign language name
-        form_layout.add_widget(
-            self.make_title_label(
-                labels.add_foreign_language,
-                size_hint_y=None,
-                height=dp(40),
-            )
-        )
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
-        self.edit_foreign_language_textbox = self.style_textinput(
-            TextInput(
-                size_hint_y=None,
-                height=60,
-                multiline=False,
-                text=metadata[1],
-            )
-        )
-        form_layout.add_widget(self.edit_foreign_language_textbox)
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
         # Stack filename (without extension)
         form_layout.add_widget(
             self.make_title_label(
                 labels.add_stack_filename,
                 size_hint_y=None,
-                height=dp(40),
+                height=dp(32),
             )
         )
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
         self.edit_name_textbox = self.style_textinput(
             TextInput(
-                size_hint_y=None,
-                height=60,
+                size_hint=(1, None),
+                height=input_height,
                 multiline=False,
                 text=stack[:-4],
             )
         )
         form_layout.add_widget(self.edit_name_textbox)
-        form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
-        # Top-center: "Save all" button
-        top_center = AnchorLayout(
-            anchor_x="center",
-            anchor_y="top",
-            padding=[30, 30, 100, 30],
-        )
+        # Save button at the bottom, full width
         save_all_button = self.make_primary_button(
             labels.save,
-            size_hint=(None, None),
-            size=(dp(160), dp(48)),
+            size_hint=(1, None),
+            height=input_height,
         )
         save_all_button.bind(
             on_press=lambda instance: self.edit_metadata_func(stack)
         )
-        top_center.add_widget(save_all_button)
-        self.window.add_widget(top_center)
+        form_layout.add_widget(save_all_button)
 
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
@@ -5093,20 +5493,18 @@ class VokabaApp(App):
 
         self.edit_vocab_original_list = vocab
 
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
         center_center = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
-            padding=80 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=80 * padding_mul,
         )
         scroll = ScrollView(size_hint=(1, 1))
-        form_layout = GridLayout(
-            cols=1,
-            spacing=15,
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+        form_layout = BoxLayout(
+            orientation="vertical",
+            spacing=dp(12),
+            padding=dp(8),
             size_hint_y=None,
         )
         form_layout.bind(minimum_height=form_layout.setter("height"))
@@ -5115,9 +5513,7 @@ class VokabaApp(App):
         top_right = AnchorLayout(
             anchor_x="right",
             anchor_y="top",
-            padding=30 * float(
-                config["settings"]["gui"]["padding_multiplicator"]
-            ),
+            padding=30 * padding_mul,
         )
         back_button = self.make_icon_button(
             "assets/back_button.png",
@@ -5131,26 +5527,22 @@ class VokabaApp(App):
             form_layout, vocab, save.read_languages("vocab/" + stack)[3]
         )
 
-        # Top-center: "Save all" button
-        top_center = AnchorLayout(
-            anchor_x="center",
-            anchor_y="top",
-            padding=[30, 30, 100, 30],
-        )
+        # Save-all button unten
+        input_height = self.get_textinput_height()
         save_all_button = self.make_primary_button(
             labels.save,
-            size_hint=(None, None),
-            size=(dp(160), dp(48)),
+            size_hint=(1, None),
+            height=input_height,
         )
         save_all_button.bind(
-            on_press=lambda instance: self.edit_vocab_func(matrix, stack)
+            on_press=lambda instance, m=matrix, s=stack: self.edit_vocab_func(m, s)
         )
-        top_center.add_widget(save_all_button)
-        self.window.add_widget(top_center)
+        form_layout.add_widget(save_all_button)
 
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
+
 
     def learn_vocab_stack(self, stack, instance=None):
         """
@@ -5308,17 +5700,16 @@ class VokabaApp(App):
 
         for idx, row in enumerate(textinput_matrix):
             if latin_active:
-                own, foreign, latin, info = [ti.text.strip() for ti in row]
+                foreign, own, latin, info = [ti.text.strip() for ti in row]
             else:
-                own, foreign, info = [ti.text.strip() for ti in row]
+                foreign, own, info = [ti.text.strip() for ti in row]
                 latin = ""
 
             # keine Vokabel ohne Sprachen speichern
             if not own and not foreign:
-                # komplett leer oder nur Zusatzinfos -> ignorieren
                 continue
 
-            # nur eine Sprache gefüllt? -> auch ignorieren
+            # nur eine Sprache gefüllt? -> ignorieren
             if not own or not foreign:
                 log("read_vocab_from_grid: skipped row with only one language filled.")
                 continue
@@ -5330,8 +5721,6 @@ class VokabaApp(App):
                 "info": info,
             }
 
-            # knowledge_level aus der alten Liste übernehmen (falls vorhanden),
-            # sonst 0.0
             if original_vocab_list is not None and idx < len(original_vocab_list):
                 entry["knowledge_level"] = original_vocab_list[idx].get("knowledge_level", 0.0)
             else:
@@ -5355,36 +5744,44 @@ class VokabaApp(App):
         grid.bind(minimum_height=grid.setter("height"))
 
         textinput_matrix = []
+        input_height = self.get_textinput_height()
 
         for vocab in vocab_list:
             row = []
 
-            for key in ["own_language", "foreign_language"]:
-                ti = self.style_textinput(TextInput(
-                    text=vocab.get(key, ""),
-                    multiline=False,
-                    size_hint_y=None,
-                    height=60,
-                ))
+            # 1. Fremdsprache, 2. eigene Sprache
+            for key in ["foreign_language", "own_language"]:
+                ti = self.style_textinput(
+                    TextInput(
+                        text=vocab.get(key, ""),
+                        multiline=False,
+                        size_hint_y=None,
+                        height=input_height,
+                    )
+                )
                 grid.add_widget(ti)
                 row.append(ti)
 
             if latin_active:
-                ti = self.style_textinput(TextInput(
-                    text=vocab.get("latin_language", ""),
-                    multiline=False,
-                    size_hint_y=None,
-                    height=60,
-                ))
+                ti = self.style_textinput(
+                    TextInput(
+                        text=vocab.get("latin_language", ""),
+                        multiline=False,
+                        size_hint_y=None,
+                        height=input_height,
+                    )
+                )
                 grid.add_widget(ti)
                 row.append(ti)
 
-            ti = self.style_textinput(TextInput(
-                text=vocab.get("info", ""),
-                multiline=False,
-                size_hint_y=None,
-                height=60,
-            ))
+            ti = self.style_textinput(
+                TextInput(
+                    text=vocab.get("info", ""),
+                    multiline=False,
+                    size_hint_y=None,
+                    height=input_height,
+                )
+            )
             grid.add_widget(ti)
             row.append(ti)
 
@@ -5392,6 +5789,7 @@ class VokabaApp(App):
 
         parent_layout.add_widget(grid)
         return textinput_matrix
+
 
     def bind_keyboard(self, dt):
         """Bind the on_key_down handler once the window is ready."""

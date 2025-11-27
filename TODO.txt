@@ -1,68 +1,34 @@
 ---PC---
-GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
-Abfrage mit Richtung
 Anki-kompatiblität überprüfen
-Ordner, Sprachen
-TTS mit sprache, die irgendwie im csv ist. 
+TTS mit sprache, die irgendwie im csv ist.
 als exe für Win, bin oder bash für Linux (Portabel)
 tts einbauen
 Ocr erschließen
 Ki für vokabelpaare erschliess4en
-Lernstunde gestalten
-
 ---Android---
 Andriod app (vllt. Buildozer)
 
------ Menu_--------
-1 button für stapel
-1 button für lernen
-Timer 
-zeit pro vokabel
-
-punkte system 0-100% Ziel: 30/Tag
-
-Übung I
--0.1/Tag
-1=+0.1
-0=-0.05
-Übung II
--0.05/Tag
-1=0.05
-0=0.05
-ÜbungIII
--0.01/Tag
-1=0.04
-0=0.08
+Buchstabenschlange
 
 
+---Todos---
+Kein back button, wenn keine vokabeln verfügbar
+Leere box, wenn keine stapel verfügbar
+kein dashboard, sondern mehr daten "in your face"
+textboxen beim vokabeln bearbeiten gehen manchmal nicht
+SVG / CSV
+Vokabeln hinzufügen und lernen prominenter im menü, überforderung
+Komische rote punkte, wenn rechtsklick
+text in textboxen zu klein
+beim vokabel hinzufügen sind die kästen zu groß (adaptiv machen)
+nicht popup sondern kurz rote warnung unter textbox, sodass man direkt weitertippen kann
+import/export anstatt ordner zu öffnen
+kein speichern knopf in menüs nach unten, so groß wie textboxen
+Eigene sprache und fremsdsprache switch: erst fremdsprache dann eigene sprache
+progress bar oben, wie lange noch, bis man sein tägliches zeiel erreicht hat (kein reset bei exit und reenter)
+Standart vokabel-ziel so viel, wie man ungefähr in 10 minuten lernen kann
 
-Sofort:
-
-Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
-
-ÜBUNGEN I <0.3
-×Karteikarte Hint
-×karteikarte Bewerten
-×Multiple choice 4
-×zuordnen
-
-ÜBUNGEN II0.3<>0.8
-×Buchstabensalat
-buchstabensuppe
-×Silben
-Karteikarte bewerten
-×Multiple choice
-Buchstabengitter
-×Zuordnen
-
-
-ÜBUNGENIII
-×Schreiben
-Buchstabengitter
-×Buchstabensalat
-buchstabensuppe
-×Silben
-
+nachschauen, wie updates installiert werden
 
 
 
