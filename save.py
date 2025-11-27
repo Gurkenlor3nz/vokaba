@@ -47,29 +47,50 @@ def save_to_vocab(
         f.write(f"# latin_language={latin_lang}\n")
         f.write(f"# latin_active={str(latin_active)}\n")
 
-        # jetzt 5 Spalten: 3 Sprachen + info + knowledge_level
+        # JETZT 8 Spalten: 3 Sprachen + info + knowledge_level + SRS
+        fieldnames = [
+            "own_language",
+            "foreign_language",
+            "latin_language",
+            "info",
+            "knowledge_level",
+            "srs_streak",
+            "srs_last_seen",
+            "srs_due",
+        ]
+
         writer = csv.DictWriter(
             f,
-            fieldnames=[
-                "own_language",
-                "foreign_language",
-                "latin_language",
-                "info",
-                "knowledge_level",
-            ],
+            fieldnames=fieldnames,
+            extrasaction="ignore",  # falls später noch mehr Felder dazu kommen
         )
         writer.writeheader()
 
         for row in vocab:
+            # fehlende Felder auffüllen
             if "latin_language" not in row:
                 row["latin_language"] = ""
             if "info" not in row:
                 row["info"] = ""
 
-            # NEU: knowledge_level immer setzen und normalisieren
+            # knowledge_level normalisieren
             row["knowledge_level"] = _normalize_knowledge_level(
                 row.get("knowledge_level", 0.0)
             )
+
+            # SRS-Felder robust setzen
+            # streak: immer int, ansonsten 0
+            try:
+                streak = int(row.get("srs_streak", 0) or 0)
+            except (TypeError, ValueError):
+                streak = 0
+            row["srs_streak"] = streak
+
+            # Zeiten als Strings (ISO-Format oder leer)
+            last_seen = row.get("srs_last_seen") or ""
+            due = row.get("srs_due") or ""
+            row["srs_last_seen"] = str(last_seen) if last_seen else ""
+            row["srs_due"] = str(due) if due else ""
 
             writer.writerow(row)
 
@@ -164,3 +185,80 @@ def save_settings(config):
     # Save Settings
     with open("config.yml", "w") as file:
         yaml.dump(config, file)
+
+
+
+def persist_single_entry(vocab, stack_vocab_lists, stack_meta_map, entry_to_stack_file):
+    """
+    Speichert genau den Stack, zu dem der gegebene Vokabel-Eintrag gehört.
+
+    - vocab: das Dict der aktuellen Vokabel
+    - stack_vocab_lists: dict[filename] -> Liste von Vokabel-Einträgen
+    - stack_meta_map: dict[filename] -> (own_lang, foreign_lang, latin_lang, latin_active)
+    - entry_to_stack_file: dict[id(entry)] -> filename
+    """
+    if vocab is None:
+        return
+
+    filename = entry_to_stack_file.get(id(vocab))
+    if not filename:
+        return
+
+    vocab_list = stack_vocab_lists.get(filename)
+    if vocab_list is None:
+        return
+
+    # evtl. alte Helper-Felder entfernen
+    for entry in vocab_list:
+        if isinstance(entry, dict):
+            entry.pop("_stack_file", None)
+
+    meta = stack_meta_map.get(filename)
+    if meta is None:
+        own_lang, foreign_lang, latin_lang, latin_active = read_languages(filename)
+    else:
+        own_lang, foreign_lang, latin_lang, latin_active = meta
+
+    save_to_vocab(
+        vocab_list,
+        filename,
+        own_lang=own_lang or "Deutsch",
+        foreign_lang=foreign_lang or "Englisch",
+        latin_lang=latin_lang or "Latein",
+        latin_active=latin_active,
+    )
+
+
+def persist_all_stacks(stack_vocab_lists, stack_meta_map):
+    """
+    Speichert alle übergebenen Stacks zurück auf die Festplatte.
+
+    - stack_vocab_lists: dict[filename] -> Liste von Vokabel-Einträgen
+    - stack_meta_map: dict[filename] -> (own_lang, foreign_lang, latin_lang, latin_active)
+    """
+    if not stack_vocab_lists:
+        return
+
+    for filename, vocab_list in stack_vocab_lists.items():
+        if vocab_list is None:
+            continue
+
+        for entry in vocab_list:
+            if isinstance(entry, dict):
+                entry.pop("_stack_file", None)
+
+        meta = stack_meta_map.get(filename)
+        if meta is None:
+            own_lang, foreign_lang, latin_lang, latin_active = read_languages(filename)
+        else:
+            own_lang, foreign_lang, latin_lang, latin_active = meta
+
+        save_to_vocab(
+            vocab_list,
+            filename,
+            own_lang=own_lang or "Deutsch",
+            foreign_lang=foreign_lang or "Englisch",
+            latin_lang=latin_lang or "Latein",
+            latin_active=latin_active,
+        )
+

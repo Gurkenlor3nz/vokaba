@@ -1,12 +1,15 @@
 """Main UI module for the Vokaba vocabulary trainer (Kivy app)."""
 
 # Standard library imports
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import os.path
 import random
 import re
 import unicodedata
+import webbrowser
+import sys
+import subprocess
 
 # Third-party imports
 import yaml
@@ -220,6 +223,11 @@ class VokabaApp(App):
         # Theme aus config übernehmen (dark/light/custom)
         apply_theme_from_config()
 
+        try:
+            Window.size = (1280, 800)
+        except Exception as e:
+            log(f"Could not set window size: {e}")
+
         self.window = FloatLayout()
         self.scroll = ScrollView(size_hint=(1, 1))
         self.main_menu()
@@ -375,8 +383,8 @@ class VokabaApp(App):
         """Apply a theme-aware style to a TextInput (dark/light/custom)."""
         ti.background_normal = ""
         ti.background_active = ""
-        # Hintergrund folgt der Kartenfarbe
-        ti.background_color = APP_COLORS["card"]
+        # etwas Kontrast zum Kartenhintergrund, damit die Felder sichtbar sind
+        ti.background_color = APP_COLORS.get("card_selected", APP_COLORS["card"])
         ti.foreground_color = APP_COLORS["text"]
         ti.cursor_color = APP_COLORS["accent"]
         ti.padding = [dp(8), dp(8), dp(8), dp(8)]
@@ -391,6 +399,64 @@ class VokabaApp(App):
             seen.add(key)
         return len(seen)
 
+    def _compute_overall_stats(self):
+        """Sammelt globale Stats über alle Stacks."""
+        stats = {
+            "stacks": 0,
+            "total_vocab": 0,
+            "unique_pairs": 0,
+            "learned_vocab": 0,
+            "avg_knowledge": 0.0,
+        }
+
+        unique_pairs = set()
+        total_knowledge = 0.0
+        total_entries = 0
+
+        vocab_path = getattr(labels, "vocab_path", "vocab")
+        if not os.path.exists(vocab_path):
+            os.makedirs(vocab_path)
+
+        for name in os.listdir(vocab_path):
+            full = os.path.join(vocab_path, name)
+            if not os.path.isfile(full):
+                continue
+
+            stats["stacks"] += 1
+
+            data = save.load_vocab(full)
+            if isinstance(data, tuple):
+                vocab_list = data[0]
+            else:
+                vocab_list = data
+
+            stats["total_vocab"] += len(vocab_list)
+
+            for e in vocab_list:
+                own = e.get("own_language", "") or ""
+                foreign = e.get("foreign_language", "") or ""
+                if own or foreign:
+                    unique_pairs.add((own, foreign))
+
+                level_raw = e.get("knowledge_level", 0.0)
+                try:
+                    level = float(level_raw)
+                except (TypeError, ValueError):
+                    level = 0.0
+                level = max(0.0, min(1.0, level))
+
+                total_knowledge += level
+                total_entries += 1
+
+                # ab ~70 % Wissen als "gelernt" zählen
+                if level >= 0.7:
+                    stats["learned_vocab"] += 1
+
+        stats["unique_pairs"] = len(unique_pairs)
+        stats["avg_knowledge"] = (total_knowledge / total_entries) if total_entries else 0.0
+        return stats
+
+
     # ------------------------------------------------------------------
     # Main menu
     # ------------------------------------------------------------------
@@ -399,12 +465,13 @@ class VokabaApp(App):
         """Build and display the main menu with the stack list and learn button."""
         log("opened main menu")
         self.window.clear_widgets()
+        global config
         config = save.load_settings()
         Config.window_icon = "assets/vokaba_icon.png"
 
         padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
 
-        # Top-left: logo button (opens settings)
+        # Top-left: logo button (opens about screen)
         top_left = AnchorLayout(
             anchor_x="left",
             anchor_y="top",
@@ -412,25 +479,11 @@ class VokabaApp(App):
         )
         vokaba_logo = self.make_icon_button(
             "assets/vokaba_logo.png",
-            on_press=self.settings,
+            on_press=self.about,
             size=dp(104),
         )
         top_left.add_widget(vokaba_logo)
         self.window.add_widget(top_left)
-
-        # Top-center: welcome text
-        top_center = AnchorLayout(
-            anchor_x="center",
-            anchor_y="top",
-            padding=[0, 30 * padding_mul, 0, 0],
-        )
-        welcome_label = self.make_title_label(
-            labels.welcome_text,
-            size_hint=(None, None),
-            size=(dp(400), dp(60)),
-        )
-        top_center.add_widget(welcome_label)
-        self.window.add_widget(top_center)
 
         # Top-right: settings icon
         top_right = AnchorLayout(
@@ -446,11 +499,127 @@ class VokabaApp(App):
         top_right.add_widget(settings_button)
         self.window.add_widget(top_right)
 
-        # Center: card with scrollable list of vocab stacks
+        # Top-center: Welcome + Stats gemeinsam, damit nichts abgeschnitten wird
+        top_center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="top",
+            padding=[0, 30 * padding_mul, 0, 0],
+        )
+
+        # Vertikal-Box für Überschrift + Stats-Karte
+        top_box = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            size=(dp(700), dp(170)),  # etwas breiter und höher, damit alles Platz hat
+            spacing=dp(12),
+        )
+
+        # Welcome-Text
+        welcome_label = self.make_title_label(
+            labels.welcome_text,
+            size_hint=(1, None),
+            height=dp(60),
+        )
+        # Text soll die ganze Breite nutzen
+        welcome_label.bind(
+            size=lambda inst, val: setattr(inst, "text_size", (val[0], None))
+        )
+
+        # Stats berechnen
+        overall_stats = self._compute_overall_stats()
+        stats_template = getattr(
+            labels,
+            "main_stats_label_template",
+            "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}",
+        )
+        stats_text = stats_template.format(
+            stacks=overall_stats["stacks"],
+            total=overall_stats["total_vocab"],
+            unique=overall_stats["unique_pairs"],
+        )
+
+        # Stats-Karte direkt unter dem Welcome-Label
+        stats_card = RoundedCard(
+            orientation="vertical",
+            size_hint=(1, None),
+            height=dp(100),
+            padding=dp(10),
+            spacing=dp(6),
+        )
+
+        stats_label = self.make_text_label(
+            stats_text,
+            size_hint_y=None,
+            height=dp(30),
+        )
+
+        hint_text = getattr(
+            labels,
+            "main_stats_hint",
+            "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln.",
+        )
+        hint_label = self.make_text_label(
+            hint_text,
+            size_hint_y=None,
+            height=dp(45),
+        )
+
+        stats_card.add_widget(stats_label)
+        stats_card.add_widget(hint_label)
+
+        # beides in die Box, Box in den Anchor, Anchor ins Fenster
+        top_box.add_widget(welcome_label)
+        top_box.add_widget(stats_card)
+        top_center.add_widget(top_box)
+        self.window.add_widget(top_center)
+
+
+        overall_stats = self._compute_overall_stats()
+        stats_template = getattr(
+            labels,
+            "main_stats_label_template",
+            "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}",
+        )
+        stats_text = stats_template.format(
+            stacks=overall_stats["stacks"],
+            total=overall_stats["total_vocab"],
+            unique=overall_stats["unique_pairs"],
+        )
+
+        stats_card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.7, None),
+            height=dp(90),
+            padding=dp(10),
+            spacing=dp(6),
+        )
+
+        stats_label = self.make_text_label(
+            stats_text,
+            size_hint_y=None,
+            height=dp(30),
+        )
+
+        hint_text = getattr(
+            labels,
+            "main_stats_hint",
+            "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln.",
+        )
+        hint_label = self.make_text_label(
+            hint_text,
+            size_hint_y=None,
+            height=dp(30),
+        )
+
+        stats_card.add_widget(stats_label)
+        stats_card.add_widget(hint_label)
+
+
+        # Center: card with scrollable list of vocab stacks (weiter unten)
         center_anchor = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
-            padding=60 * padding_mul,
+            padding=[60 * padding_mul, 180 * padding_mul, 60 * padding_mul, 60 * padding_mul],
         )
 
         card = RoundedCard(
@@ -460,17 +629,19 @@ class VokabaApp(App):
             spacing=dp(8),
         )
 
-        # Scrollable list of files in labels.vocab_path
+        # Scrollable list of files in vocab_path
+        vocab_path = getattr(labels, "vocab_path", "vocab")
+        if not os.path.exists(vocab_path):
+            os.makedirs(vocab_path)
+
         self.file_list = GridLayout(cols=1, spacing=dp(5), size_hint_y=None)
         self.file_list.bind(minimum_height=self.file_list.setter("height"))
 
-        if not os.path.exists("vocab"):
-            os.makedirs("vocab")
-
-        for i in os.listdir(labels.vocab_path):
-            if os.path.isfile(os.path.join(labels.vocab_path, i)):
-                btn = self.make_list_button(i[:-4])
-                btn.bind(on_release=lambda btn, name=i: self.select_stack(name))
+        for name in os.listdir(vocab_path):
+            full = os.path.join(vocab_path, name)
+            if os.path.isfile(full):
+                btn = self.make_list_button(name[:-4])
+                btn.bind(on_release=lambda btn, fname=name: self.select_stack(fname))
                 self.file_list.add_widget(btn)
 
         self.scroll = ScrollView(size_hint=(1, 1), do_scroll_y=True)
@@ -480,6 +651,20 @@ class VokabaApp(App):
 
         center_anchor.add_widget(card)
         self.window.add_widget(center_anchor)
+
+        # Bottom-left: Dashboard-Button
+        bottom_left = AnchorLayout(
+            anchor_x="left",
+            anchor_y="bottom",
+            padding=30 * padding_mul,
+        )
+        dashboard_button = self.make_icon_button(
+            "assets/dashboard_icon.png",
+            on_press=self.open_dashboard,
+            size=dp(56),
+        )
+        bottom_left.add_widget(dashboard_button)
+        self.window.add_widget(bottom_left)
 
         # Bottom-right: add-stack FAB
         bottom_right = AnchorLayout(
@@ -518,6 +703,7 @@ class VokabaApp(App):
         )
         bottom_center.add_widget(learn_button)
         self.window.add_widget(bottom_center)
+
 
     # ------------------------------------------------------------------
     # Settings screen
@@ -625,7 +811,80 @@ class VokabaApp(App):
             settings_content.add_widget(row_card)
 
 
-        settings_content.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
+        # kleiner Abstand nach den Slidern
+        settings_content.add_widget(
+            Label(size_hint_y=None, height=dp(12))
+        )
+
+        # Sessiongröße als Zahl-Eingabe
+        def on_session_size_focus(instance, focused):
+            # Nur reagieren, wenn der Fokus VERLOREN wird
+            if focused:
+                return
+            txt = (instance.text or "").strip()
+            try:
+                num = int(txt)
+            except (TypeError, ValueError):
+                num = int(get_in(config, ["settings", "session_size"], 20) or 20)
+            if num < 1:
+                num = 1
+            if num > 500:
+                num = 500
+            set_in(config, ["settings", "session_size"], num)
+            save.save_settings(config)
+            instance.text = str(num)
+
+        session_card = RoundedCard(
+            orientation="vertical",
+            size_hint_y=None,
+            height=dp(90),
+            padding=dp(8),
+            spacing=dp(4),
+        )
+
+        session_label = self.make_text_label(
+            getattr(
+                labels,
+                "settings_session_size_label",
+                "Karten pro Lernsitzung",
+            ),
+            size_hint_y=None,
+            height=dp(40),
+        )
+
+        session_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+
+        current_session_size = str(
+            int(get_in(config, ["settings", "session_size"], 20) or 20)
+        )
+        session_input = self.style_textinput(
+            TextInput(
+                text=current_session_size,
+                multiline=False,
+                size_hint=(0.3, 1),
+                halign="center",
+            )
+        )
+        session_input.input_filter = "int"
+        session_input.bind(focus=on_session_size_focus)
+
+        unit_label = self.make_text_label(
+            getattr(labels, "settings_session_size_unit", "Karten"),
+            size_hint_y=None,
+            height=dp(40),
+        )
+
+        session_row.add_widget(session_input)
+        session_row.add_widget(unit_label)
+
+        session_card.add_widget(session_label)
+        session_card.add_widget(session_row)
+        settings_content.add_widget(session_card)
 
 
         # ------------------------------------------------------------------
@@ -651,8 +910,7 @@ class VokabaApp(App):
             padding=dp(10),
             spacing=dp(10),
         )
-        # WICHTIG: Höhe automatisch an Kinder anpassen,
-        # sonst überlappt der nachfolgende Text
+        # Höhe automatisch an Kinder anpassen
         theme_card.bind(minimum_height=theme_card.setter("height"))
 
         current_preset = config.get("settings", {}).get("theme", {}).get("preset", "dark")
@@ -747,7 +1005,7 @@ class VokabaApp(App):
 
         reset_btn = self.make_secondary_button(
             reset_text,
-            size_hint=(0.5, 1),  # so breit wie beide Hintergrund-Buttons zusammen
+            size_hint=(0.5, 1),
         )
         reset_btn.bind(on_press=self.reset_custom_colors)
 
@@ -758,21 +1016,21 @@ class VokabaApp(App):
         theme_card.add_widget(bg_row)
         settings_content.add_widget(theme_card)
 
+        # kleiner Abstand zwischen Theme und Lernmodi
+        settings_content.add_widget(
+            Label(size_hint_y=None, height=dp(24))
+        )
 
         # ------------------------------------------------------------------
         # Learning mode toggles
         # ------------------------------------------------------------------
         modes_header_text = getattr(labels, "settings_modes_header")
 
-
         settings_content.add_widget(
             self.make_title_label(
-                modes_header_text + "\n\n\n",
+                modes_header_text,
                 size_hint_y=None,
-                height=dp(
-                    400
-                    * float(config["settings"]["gui"]["padding_multiplicator"])
-                ),
+                height=dp(40),
             )
         )
 
@@ -782,6 +1040,7 @@ class VokabaApp(App):
             padding=dp(8),
             spacing=dp(8),
         )
+        modes_card.bind(minimum_height=modes_card.setter("height"))
 
         grid = GridLayout(
             cols=2,
@@ -789,6 +1048,7 @@ class VokabaApp(App):
             row_default_height=dp(50),
             row_force_default=True,
             spacing=dp(8),
+            padding=(0, dp(4), 0, dp(4)),
         )
         grid.bind(minimum_height=grid.setter("height"))
 
@@ -802,7 +1062,7 @@ class VokabaApp(App):
             cb = CheckBox(
                 active=current,
                 size_hint=(None, None),
-                size=(dp(28), dp(28)),
+                size=(dp(36), dp(36)),  # etwas größer
             )
             cb.bind(
                 active=self.on_mode_checkbox_changed(
@@ -868,8 +1128,7 @@ class VokabaApp(App):
         grid.add_widget(l5)
         grid.add_widget(c5)
 
-
-        # typing input mode (Eingabe-Modus)
+        # typing input mode
         typing_label_text = getattr(
             labels, "learn_flashcards_typing_mode",
         )
@@ -877,8 +1136,7 @@ class VokabaApp(App):
         grid.add_widget(l6)
         grid.add_widget(c6)
 
-
-        # syllable salad (Silben-Modus)
+        # syllable salad
         l_syl, c_syl = add_mode_row(
             "syllable_salad",
             getattr(
@@ -894,14 +1152,386 @@ class VokabaApp(App):
         grid.add_widget(l_syl)
         grid.add_widget(c_syl)
 
-
         modes_card.add_widget(grid)
         settings_content.add_widget(modes_card)
+
 
         scroll.add_widget(settings_content)
         card.add_widget(scroll)
         center.add_widget(card)
         self.window.add_widget(center)
+
+    # ------------------------------------------------------------------
+    # About screen for Vokaba logo
+    # ------------------------------------------------------------------
+
+
+    def about(self, instance=None):
+        """'Über Vokaba'-Screen mit Texten aus labels.py und Discord-Link."""
+        log("opened about screen")
+        self.window.clear_widgets()
+
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
+        # Top-right: zurück zum Hauptmenü
+        top_right = AnchorLayout(
+            anchor_x="right",
+            anchor_y="top",
+            padding=30 * padding_mul,
+        )
+        back_button = self.make_icon_button(
+            "assets/back_button.png",
+            on_press=self.main_menu,
+            size=dp(56),
+        )
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        # Top-center: Titel
+        top_center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="top",
+            padding=[0, 30 * padding_mul, 0, 0],
+        )
+        title_label = self.make_title_label(
+            getattr(labels, "about_title", "Über Vokaba"),
+            size_hint=(None, None),
+            size=(dp(400), dp(60)),
+        )
+        top_center.add_widget(title_label)
+        self.window.add_widget(top_center)
+
+        # Center: Card mit ScrollView für den Text
+        center_anchor = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=40 * padding_mul,
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.85, 0.8),
+            padding=dp(16),
+            spacing=dp(12),
+        )
+
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(12),
+            padding=dp(4),
+        )
+        content.bind(minimum_height=content.setter("height"))
+
+        # Intro-Text
+        intro = self.make_text_label(
+            getattr(
+                labels,
+                "about_intro",
+                "Vokaba ist ein super-minimalistischer Vokabeltrainer.",
+            ),
+            size_hint_y=None,
+            height=dp(120),
+        )
+        content.add_widget(intro)
+
+        # Abschnitt: smartes Lernsystem
+        heading_learning = self.make_title_label(
+            getattr(labels, "about_heading_learning", "Smartes Lernsystem"),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(heading_learning)
+
+        bullet_1 = self.make_text_label(
+            getattr(
+                labels,
+                "about_bullet_adaptive",
+                "• Adaptive Wiederholung …",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(bullet_1)
+
+        bullet_2 = self.make_text_label(
+            getattr(
+                labels,
+                "about_bullet_modes",
+                "• Wechselnde Modi …",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(bullet_2)
+
+        bullet_3 = self.make_text_label(
+            getattr(
+                labels,
+                "about_bullet_csv",
+                "• CSV-Stacks …",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(bullet_3)
+
+        bullet_4 = self.make_text_label(
+            getattr(
+                labels,
+                "about_bullet_design",
+                "• Super-minimalistisches Design …",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(bullet_4)
+
+        # Alpha-Hinweis
+        alpha_label = self.make_text_label(
+            getattr(
+                labels,
+                "about_alpha_label",
+                "Diese Version ist ein früher Alpha-Release.",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(alpha_label)
+
+        # Abschnitt: Discord / Support
+        heading_discord = self.make_title_label(
+            getattr(labels, "about_heading_discord", "Support & Discord"),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(heading_discord)
+
+        discord_text = self.make_text_label(
+            getattr(
+                labels,
+                "about_discord_text",
+                "Feedback und Bugreports sind sehr willkommen.",
+            ),
+            size_hint_y=None,
+            height=dp(80),
+        )
+        content.add_widget(discord_text)
+
+        # Discord-Link (hier deinen echten Invite eintragen)
+        DISCORD_URL = "https://discord.gg/DEIN_DISCORD_LINK"
+
+        discord_button = self.make_primary_button(
+            getattr(labels, "about_discord_button", "Discord öffnen"),
+            size_hint=(1, None),
+            height=dp(50),
+        )
+        discord_button.bind(
+            on_press=lambda inst: webbrowser.open(DISCORD_URL)
+        )
+        content.add_widget(discord_button)
+
+        # Klarer Text-Link zum Kopieren
+        link_prefix = getattr(labels, "about_discord_link_prefix", "Link:")
+        discord_link_label = self.make_text_label(
+            f"{link_prefix} {DISCORD_URL}",
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(discord_link_label)
+
+        scroll.add_widget(content)
+        card.add_widget(scroll)
+        center_anchor.add_widget(card)
+        self.window.add_widget(center_anchor)
+
+    # ------------------------------------------------------------------
+    # Dashboard for showing statistics
+    # ------------------------------------------------------------------
+
+    def open_dashboard(self, instance=None):
+        """Dashboard-Screen mit globalen Lern-Stats."""
+        log("opened dashboard")
+        self.window.clear_widgets()
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
+        # Top-right: zurück zum Hauptmenü
+        top_right = AnchorLayout(
+            anchor_x="right",
+            anchor_y="top",
+            padding=30 * padding_mul,
+        )
+        back_button = self.make_icon_button(
+            "assets/back_button.png",
+            on_press=self.main_menu,
+            size=dp(56),
+        )
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
+
+        # Top-center: Titel
+        top_center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="top",
+            padding=[0, 30 * padding_mul, 0, 0],
+        )
+        title_label = self.make_title_label(
+            getattr(labels, "dashboard_title", "Dashboard"),
+            size_hint=(None, None),
+            size=(dp(400), dp(60)),
+        )
+        top_center.add_widget(title_label)
+        self.window.add_widget(top_center)
+
+        # Center: Card mit Inhalt
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=40 * padding_mul,
+        )
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.85, 0.8),
+            padding=dp(16),
+            spacing=dp(12),
+        )
+
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(12),
+            padding=dp(4),
+        )
+        content.bind(minimum_height=content.setter("height"))
+
+        overall = self._compute_overall_stats()
+        stats_cfg = config.get("stats", {}) or {}
+
+        # Lernzeit formatieren
+        total_seconds = int(stats_cfg.get("total_learn_time_seconds", 0) or 0)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        if hours > 0:
+            time_str = f"{hours}h {minutes}min"
+        else:
+            time_str = f"{minutes}min"
+
+        total_vocab = overall["total_vocab"] or 1
+        learned = overall["learned_vocab"]
+        progress_percent = (learned / total_vocab) * 100.0
+        avg_knowledge_percent = overall["avg_knowledge"] * 100.0
+
+        # Abschnitt: Überblick
+        overview_header = self.make_title_label(
+            getattr(labels, "dashboard_overview_header", "Überblick"),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(overview_header)
+
+        overview_card = RoundedCard(
+            orientation="vertical",
+            size_hint_y=None,
+            padding=dp(10),
+            spacing=dp(4),
+        )
+        overview_card.bind(minimum_height=overview_card.setter("height"))
+
+        overview_template = getattr(
+            labels,
+            "dashboard_overview_stats",
+            "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}",
+        )
+        overview_label = self.make_text_label(
+            overview_template.format(
+                stacks=overall["stacks"],
+                total=overall["total_vocab"],
+                unique=overall["unique_pairs"],
+            ),
+            size_hint_y=None,
+            height=dp(30),
+        )
+        overview_card.add_widget(overview_label)
+        content.add_widget(overview_card)
+
+        # Abschnitt: Lernfortschritt
+        learning_header = self.make_title_label(
+            getattr(labels, "dashboard_learning_header", "Lernfortschritt"),
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(learning_header)
+
+        learning_card = RoundedCard(
+            orientation="vertical",
+            size_hint_y=None,
+            padding=dp(10),
+            spacing=dp(4),
+        )
+        learning_card.bind(minimum_height=learning_card.setter("height"))
+
+        progress_template = getattr(
+            labels,
+            "dashboard_learned_progress",
+            "Gelernte Vokabeln: {learned}/{total} ({percent:.0f} %)",
+        )
+        progress_label = self.make_text_label(
+            progress_template.format(
+                learned=learned,
+                total=overall["total_vocab"],
+                percent=progress_percent,
+            ),
+            size_hint_y=None,
+            height=dp(30),
+        )
+        learning_card.add_widget(progress_label)
+
+        avg_template = getattr(
+            labels,
+            "dashboard_average_knowledge",
+            "Durchschnittlicher Wissensstand: {avg:.0f} %",
+        )
+        avg_label = self.make_text_label(
+            avg_template.format(avg=avg_knowledge_percent),
+            size_hint_y=None,
+            height=dp(30),
+        )
+        learning_card.add_widget(avg_label)
+
+        time_template = getattr(
+            labels,
+            "dashboard_time_spent",
+            "Gesamtlernzeit: {time}",
+        )
+        time_label = self.make_text_label(
+            time_template.format(time=time_str),
+            size_hint_y=None,
+            height=dp(30),
+        )
+        learning_card.add_widget(time_label)
+
+        content.add_widget(learning_card)
+
+        # Optionaler Tipp
+        hint_text = getattr(
+            labels,
+            "dashboard_hint",
+            "Tipp: Lieber regelmäßig kurze Sessions als seltene Marathons.",
+        )
+        hint_label = self.make_text_label(
+            hint_text,
+            size_hint_y=None,
+            height=dp(40),
+        )
+        content.add_widget(hint_label)
+
+        scroll.add_widget(content)
+        card.add_widget(scroll)
+        center.add_widget(card)
+        self.window.add_widget(center)
+
 
     # ------------------------------------------------------------------
     # Stack selection and detail screens
@@ -963,16 +1593,32 @@ class VokabaApp(App):
         grid = GridLayout(cols=1, spacing=dp(12), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
-        # Delete stack
-        delete_stack_button = self.make_danger_button(
-            labels.delete_stack_button,
+        # Ordner mit Vokabel-SVGs öffnen
+        open_folder_text = getattr(
+            labels,
+            "open_stack_folder_button_text",
+            "Ordner mit Vokabel-SVGs öffnen",
+        )
+        open_folder_button = self.make_secondary_button(
+            open_folder_text,
             size_hint_y=None,
             height=dp(60),
         )
-        delete_stack_button.bind(
-            on_press=lambda instance: self.delete_stack_confirmation(stack)
+        open_folder_button.bind(
+            on_press=lambda instance: self.open_stack_folder(stack)
         )
-        grid.add_widget(delete_stack_button)
+        grid.add_widget(open_folder_button)
+
+        # Edit vocab
+        edit_vocab_button = self.make_secondary_button(
+            labels.edit_vocab_button_text,
+            size_hint_y=None,
+            height=dp(60),
+        )
+        edit_vocab_button.bind(
+            on_press=lambda instance: self.edit_vocab(stack, vocab_current)
+        )
+        grid.add_widget(edit_vocab_button)
 
         # Edit metadata
         edit_metadata_button = self.make_secondary_button(
@@ -985,6 +1631,18 @@ class VokabaApp(App):
         )
         grid.add_widget(edit_metadata_button)
 
+        # Delete stack
+        delete_stack_button = self.make_danger_button(
+            labels.delete_stack_button,
+            size_hint_y=None,
+            height=dp(60),
+        )
+        delete_stack_button.bind(
+            on_press=lambda instance: self.delete_stack_confirmation(stack)
+        )
+        grid.add_widget(delete_stack_button)
+
+
         # Add vocab
         add_vocab_button = self.make_primary_button(
             labels.add_vocab_button_text,
@@ -995,17 +1653,6 @@ class VokabaApp(App):
             on_press=lambda instance: self.add_vocab(stack, vocab_current)
         )
         grid.add_widget(add_vocab_button)
-
-        # Edit vocab
-        edit_vocab_button = self.make_secondary_button(
-            labels.edit_vocab_button_text,
-            size_hint_y=None,
-            height=dp(60),
-        )
-        edit_vocab_button.bind(
-            on_press=lambda instance: self.edit_vocab(stack, vocab_current)
-        )
-        grid.add_widget(edit_vocab_button)
 
         # Learn this stack
         self.recompute_available_modes()
@@ -1025,6 +1672,38 @@ class VokabaApp(App):
         card.add_widget(scroll)
         center_anchor.add_widget(card)
         self.window.add_widget(center_anchor)
+
+
+    def open_stack_folder(self, stack, instance=None):
+        """
+        Öffnet den Ordner für diesen Stack im Dateimanager.
+        Wenn es einen Unterordner mit dem Stacknamen gibt (z.B. vocab/<stackname>/),
+        wird dieser geöffnet, sonst der allgemeine vocab-Ordner.
+        """
+        # Basis-Vokabelordner (falls in labels.vocab_path konfiguriert)
+        vocab_root = getattr(labels, "vocab_path", "vocab")
+
+        # Kandidat: Unterordner mit gleichem Namen wie die CSV (ohne .csv)
+        base_name = os.path.splitext(stack)[0]
+        candidate = os.path.join(vocab_root, base_name)
+
+        if os.path.isdir(candidate):
+            target = os.path.abspath(candidate)
+        else:
+            target = os.path.abspath(vocab_root)
+
+        log(f"Opening folder: {target}")
+
+        try:
+            if os.name == "nt":
+                os.startfile(target)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", target])
+            else:
+                subprocess.Popen(["xdg-open", target])
+        except Exception as e:
+            log(f"Could not open folder '{target}': {e}")
+
 
     def delete_stack_confirmation(self, stack, instance=None):
         """Confirmation dialog before deleting an entire stack."""
@@ -1178,7 +1857,7 @@ class VokabaApp(App):
         self.stack_input = self.style_textinput(
             TextInput(
             size_hint_y=None,
-            height=dp(40),
+            height=dp(60),
             multiline=False,
             )
         )
@@ -1195,7 +1874,7 @@ class VokabaApp(App):
         self.own_language_input = self.style_textinput(
             TextInput(
             size_hint_y=None,
-            height=dp(40),
+            height=dp(60),
             multiline=False,
             )
         )
@@ -1213,7 +1892,7 @@ class VokabaApp(App):
         self.foreign_language_input = self.style_textinput(
             TextInput(
             size_hint_y=None,
-            height=dp(40),
+            height=dp(60),
             multiline=False,
         ))
         form_layout.add_widget(self.foreign_language_input)
@@ -1235,7 +1914,7 @@ class VokabaApp(App):
         self.three_columns = CheckBox(
             active=False,
             size_hint=(None, None),
-            size=(dp(28), dp(28)),
+            size=(dp(36), dp(36)),
         )
         self.three_columns.bind(active=self.three_column_checkbox)
         row.add_widget(self.three_columns)
@@ -1245,7 +1924,7 @@ class VokabaApp(App):
         add_stack_button = self.make_primary_button(
             labels.add_stack_button_text,
             size_hint=(1, None),
-            height=dp(48),
+            height=dp(60),
         )
         add_stack_button.bind(on_press=self.add_stack_button_func)
         form_layout.add_widget(add_stack_button)
@@ -1454,6 +2133,12 @@ class VokabaApp(App):
 
         self.window.clear_widgets()
 
+        # Startzeit der Session (für Dashboard-Lernzeit)
+        self.session_start_time = datetime.now()
+
+        # Static container for all learning screens
+        self.learn_area = FloatLayout()
+
         # Static container for all learning screens
         self.learn_area = FloatLayout()
         self.window.add_widget(self.learn_area)
@@ -1572,6 +2257,16 @@ class VokabaApp(App):
             )
             self.window.add_widget(msg_anchor)
             return
+
+        # Session-Zähler initialisieren (Tagesziel/Sessiongroße)
+        self.session_cards_total = int(
+            get_in(config, ["settings", "session_size"], 20) or 20
+        )
+        if self.session_cards_total < 1:
+            self.session_cards_total = 1
+        self.session_cards_done = 0
+        self.session_correct = 0
+        self.session_wrong = 0
 
         # Nur Modi erlauben, die aktiviert sind und für die genug Vokabeln da sind
         self.recompute_available_modes()
@@ -1722,6 +2417,30 @@ class VokabaApp(App):
 
         self._adjust_knowledge_level(current_vocab, delta)
 
+        # SRS-Update auf Basis des Self-Ratings
+        if quality == "very_easy":
+            q_val = 1.0
+            was_correct = True
+        elif quality == "easy":
+            q_val = 0.75
+            was_correct = True
+        elif quality == "hard":
+            q_val = 0.4
+            was_correct = False
+        elif quality == "very_hard":
+            q_val = 0.1
+            was_correct = False
+        else:
+            q_val = 0.5
+            was_correct = False
+
+        self.update_srs(current_vocab, was_correct=was_correct, quality=q_val)
+
+        # Session-Schritt verbuchen
+        was_correct_session = quality in ("very_easy", "easy")
+        if self._register_session_step(was_correct_session):
+            return
+
         # Nächste Vokabel (low score = höhere Wahrscheinlichkeit) + passenden Modus wählen
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
@@ -1732,6 +2451,144 @@ class VokabaApp(App):
         self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
+
+    # ------------------------------------------------------------------
+    # Session-Tracking (Tagesziel / Lernsitzungen)
+    # ------------------------------------------------------------------
+
+    def _register_session_step(self, was_correct=None, steps=1):
+        """
+        Aktualisiert die Session-Zähler.
+
+        Gibt True zurück, wenn die Session damit abgeschlossen ist und
+        ein Summary-Screen angezeigt werden soll.
+
+        steps = wie viele „Karten“ gezählt werden (z.B. 5 bei Connect-Pairs).
+        """
+        if not hasattr(self, "session_cards_total"):
+            return False
+
+        try:
+            steps = int(steps)
+        except (TypeError, ValueError):
+            steps = 1
+        if steps < 1:
+            steps = 1
+
+        self.session_cards_done = getattr(self, "session_cards_done", 0) + steps
+
+        if was_correct is True:
+            self.session_correct = getattr(self, "session_correct", 0) + steps
+        elif was_correct is False:
+            self.session_wrong = getattr(self, "session_wrong", 0) + steps
+
+        if self.session_cards_done >= self.session_cards_total:
+            self.show_session_summary()
+            return True
+        return False
+
+    def show_session_summary(self):
+        """Kleiner Abschluss-Screen für eine Lernsitzung."""
+        self.learn_content.clear_widgets()
+
+        padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
+
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=40 * padding_mul,
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.8, 0.6),
+            padding=dp(16),
+            spacing=dp(12),
+        )
+
+        title_text = getattr(
+            labels,
+            "session_summary_title",
+            "Session abgeschlossen",
+        )
+        title_lbl = self.make_title_label(
+            title_text,
+            size_hint_y=None,
+            height=dp(40),
+        )
+        card.add_widget(title_lbl)
+
+        total = getattr(self, "session_cards_done", 0)
+        correct = getattr(self, "session_correct", 0)
+        wrong = getattr(self, "session_wrong", 0)
+        goal = getattr(self, "session_cards_total", total)
+
+        text_template = getattr(
+            labels,
+            "session_summary_text",
+            "Du hast {done} Karten in dieser Session abgeschlossen.\n"
+            "Richtig: {correct}   Schwer / falsch: {wrong}\n"
+            "Session-Ziel: {goal} Karten.",
+        )
+
+        body_lbl = self.make_text_label(
+            text_template.format(
+                done=total,
+                correct=correct,
+                wrong=wrong,
+                goal=goal,
+            ),
+            size_hint_y=None,
+            height=dp(120),
+        )
+        card.add_widget(body_lbl)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(12),
+        )
+
+        cont_text = getattr(
+            labels,
+            "session_summary_continue_button",
+            "Weiterlernen",
+        )
+        back_text = getattr(
+            labels,
+            "session_summary_back_button",
+            "Zurück zum Hauptmenü",
+        )
+
+        cont_btn = self.make_primary_button(
+            cont_text,
+            size_hint=(0.5, 1),
+        )
+        back_btn = self.make_secondary_button(
+            back_text,
+            size_hint=(0.5, 1),
+        )
+
+        def _continue(*args):
+            # Neue Session mit den gleichen Einstellungen starten
+            self.session_cards_done = 0
+            self.session_correct = 0
+            self.session_wrong = 0
+            self.show_current_card()
+
+        def _back(*args):
+            self.exit_learning()
+
+        cont_btn.bind(on_press=_continue)
+        back_btn.bind(on_press=_back)
+
+        btn_row.add_widget(back_btn)
+        btn_row.add_widget(cont_btn)
+
+        card.add_widget(btn_row)
+        center.add_widget(card)
+        self.learn_content.add_widget(center)
 
 
     def _format_backside(self, vocab):
@@ -1744,6 +2601,26 @@ class VokabaApp(App):
             if latin
             else f"{back}\n\n{additional}"
         )
+
+    def _format_answer_lines(self, vocab):
+        """
+        Helper für Nicht-Flashcard-Modi: kombiniert Fremdsprache,
+        dritte Spalte und Info auf mehreren Zeilen.
+        """
+        foreign = (vocab.get("foreign_language") or "").strip()
+        latin = (vocab.get("latin_language") or "").strip()
+        info = (vocab.get("info") or "").strip()
+
+        lines = []
+        if foreign:
+            lines.append(foreign)
+        if latin:
+            lines.append(latin)
+        if info:
+            lines.append(info)
+
+        return "\n".join(lines) if lines else ""
+
 
     def _scramble_word(self, word: str) -> str:
         """Return a shuffled version of `word` that is usually different."""
@@ -2010,6 +2887,58 @@ class VokabaApp(App):
     # Knowledge / difficulty helpers
     # ------------------------------------------------------------------
 
+
+    def update_srs(self, vocab, was_correct: bool, quality: float = 0.5):
+        """
+        Einfaches Spaced-Repetition-Update für einen Vokabeleintrag.
+
+        - was_correct: True, wenn die Karte in diesem Durchgang gewusst /
+          als „leicht/okay“ bewertet wurde.
+        - quality: grobe Qualität 0.0–1.0 (z.B. aus Self-Ratings).
+        """
+        if not vocab:
+            return
+
+        now = datetime.now()
+
+        try:
+            streak = int(vocab.get("srs_streak", 0) or 0)
+        except (TypeError, ValueError):
+            streak = 0
+
+        if was_correct:
+            streak += 1
+        else:
+            streak = 0
+
+        vocab["srs_streak"] = streak
+        vocab["srs_last_seen"] = now.isoformat()
+
+        # sehr simple Intervalle (Tage)
+        base_intervals = [1, 2, 4, 7, 14, 30]
+        idx = min(streak, len(base_intervals) - 1)
+        days = base_intervals[idx]
+
+        # quality (0.0–1.0) skaliert das Intervall leicht
+        try:
+            q = float(quality)
+        except (TypeError, ValueError):
+            q = 0.5
+        q = max(0.0, min(1.0, q))
+
+        factor = 0.75 + 0.5 * q  # 0.75–1.25
+        days = max(1, int(days * factor))
+
+        due = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)
+        vocab["srs_due"] = due.isoformat()
+
+        # SRS-Daten direkt mitspeichern
+        try:
+            self._persist_single_entry(vocab)
+        except Exception as e:
+            log(f"error while auto-saving SRS data: {e}")
+
+
     def _adjust_knowledge_level(self, vocab, delta, persist_immediately=True):
         """
         Increase/decrease vocab['knowledge_level'] by `delta` and clamp to [0, 1].
@@ -2043,88 +2972,62 @@ class VokabaApp(App):
 
     def _persist_single_entry(self, vocab):
         """
-        Speichert den Stack, zu dem dieses Vokabel gehört, sofort in die CSV-Datei.
+        Delegiert das Speichern eines einzelnen Eintrags an save.persist_single_entry.
         """
         if not hasattr(self, "stack_vocab_lists"):
             return
 
-        filename_map = getattr(self, "entry_to_stack_file", {})
-        filename = filename_map.get(id(vocab))
-        if not filename:
-            return
-
-        vocab_list = self.stack_vocab_lists.get(filename)
-        if vocab_list is None:
-            return
-
-        # Safety: alte Hilfs-Schlüssel entfernen, falls noch vorhanden
-        for entry in vocab_list:
-            if isinstance(entry, dict):
-                entry.pop("_stack_file", None)
-
-        meta = getattr(self, "stack_meta_map", {}).get(filename)
-        if meta is None:
-            own_lang, foreign_lang, latin_lang, latin_active = save.read_languages(
-                filename
-            )
-        else:
-            own_lang, foreign_lang, latin_lang, latin_active = meta
-
         try:
-            save.save_to_vocab(
-                vocab_list,
-                filename,
-                own_lang=own_lang or "Deutsch",
-                foreign_lang=foreign_lang or "Englisch",
-                latin_lang=latin_lang or "Latein",
-                latin_active=latin_active,
+            save.persist_single_entry(
+                vocab,
+                getattr(self, "stack_vocab_lists", {}),
+                getattr(self, "stack_meta_map", {}),
+                getattr(self, "entry_to_stack_file", {}),
             )
         except Exception as e:
-            log(f"error while auto-saving vocab '{filename}': {e}")
+            log(f"error while auto-saving vocab '{vocab}': {e}")
 
 
     def persist_knowledge_levels(self):
         """
-        Write all vocab stacks from the current learning session back to CSV.
+        Speichert alle Vokabel-Stapel aus der aktuellen Lernsession über save.persist_all_stacks().
         Wird beim Verlassen des Lernmodus (exit_learning) verwendet.
         """
         if not hasattr(self, "stack_vocab_lists"):
             return
 
-        for filename, vocab_list in getattr(self, "stack_vocab_lists", {}).items():
-            # Sicherheit: alle Hilfsfelder entfernen, falls vorhanden
-            for entry in vocab_list:
-                if isinstance(entry, dict):
-                    entry.pop("_stack_file", None)
-
-            meta = getattr(self, "stack_meta_map", {}).get(filename)
-            if meta is None:
-                own_lang, foreign_lang, latin_lang, latin_active = save.read_languages(
-                    filename
-                )
-            else:
-                own_lang, foreign_lang, latin_lang, latin_active = meta
-
-            try:
-                save.save_to_vocab(
-                    vocab_list,
-                    filename,
-                    own_lang=own_lang or "Deutsch",
-                    foreign_lang=foreign_lang or "Englisch",
-                    latin_lang=latin_lang or "Latein",
-                    latin_active=latin_active,
-                )
-            except Exception as e:
-                log(f"error while saving vocab '{filename}': {e}")
+        try:
+            save.persist_all_stacks(
+                getattr(self, "stack_vocab_lists", {}),
+                getattr(self, "stack_meta_map", {}),
+            )
+        except Exception as e:
+            log(f"error while saving vocab stacks: {e}")
 
 
     def exit_learning(self, instance=None):
-        """Persist knowledge levels and return to the main menu."""
+        """Persist knowledge levels, Lernzeit updaten und zurück ins Hauptmenü."""
         try:
             self.persist_knowledge_levels()
         except Exception as e:
             log(f"persist_knowledge_levels failed: {e}")
+
+        # Lernzeit im config.stats speichern
+        try:
+            start = getattr(self, "session_start_time", None)
+            if start is not None:
+                delta = datetime.now() - start
+                seconds = max(0, int(delta.total_seconds()))
+                stats_cfg = config.setdefault("stats", {})
+                stats_cfg["total_learn_time_seconds"] = int(
+                    stats_cfg.get("total_learn_time_seconds", 0) or 0
+                ) + seconds
+                save.save_settings(config)
+        except Exception as e:
+            log(f"error while updating learning time: {e}")
+
         self.main_menu()
+
 
     # ------------------------------------------------------------------
     # Vokabelauswahl & Moduswahl nach knowledge_level
@@ -2154,8 +3057,11 @@ class VokabaApp(App):
     def _pick_next_vocab_index(self, avoid_current=True):
         """
         Wählt den Index der nächsten Vokabel:
-        - Vokabeln mit niedrigem knowledge_level sind wahrscheinlicher.
-        - optional wird die aktuelle Vokabel ausgeschlossen (avoid_current=True).
+
+        - zuerst werden fällige Karten (srs_due <= jetzt) bevorzugt
+        - innerhalb der Kandidaten sind Vokabeln mit niedrigem
+          knowledge_level wahrscheinlicher
+        - optional wird die aktuelle Vokabel ausgeschlossen
         """
         if not getattr(self, "all_vocab_list", None):
             return 0
@@ -2164,34 +3070,57 @@ class VokabaApp(App):
         if n <= 1:
             return 0
 
-        weights = []
-        total = 0.0
+        now = datetime.now()
+        due_indices = []
+
+        # Kandidaten mit fälliger SRS-Datum sammeln
+        for idx, entry in enumerate(self.all_vocab_list):
+            due_raw = entry.get("srs_due")
+            if not due_raw:
+                continue
+            try:
+                due = datetime.fromisoformat(str(due_raw))
+            except Exception:
+                continue
+            if due <= now:
+                due_indices.append(idx)
+
+        if due_indices:
+            candidate_indices = due_indices
+        else:
+            candidate_indices = list(range(n))
+
         current_idx = getattr(self, "current_vocab_index", 0)
 
-        for idx, entry in enumerate(self.all_vocab_list):
-            if avoid_current and idx == current_idx and n > 1:
-                w = 0.0
-            else:
-                w = self._compute_vocab_weight(entry)
+        if avoid_current and len(candidate_indices) > 1 and current_idx in candidate_indices:
+            candidate_indices = [i for i in candidate_indices if i != current_idx]
+
+        if not candidate_indices:
+            candidate_indices = [i for i in range(n) if not (avoid_current and i == current_idx)]
+            if not candidate_indices:
+                return 0
+
+        weights = []
+        total = 0.0
+        for idx in candidate_indices:
+            entry = self.all_vocab_list[idx]
+            w = self._compute_vocab_weight(entry)
             weights.append(w)
             total += w
 
         if total <= 0.0:
-            # Fallback: gleichverteilt
-            candidates = list(range(n))
-            if avoid_current and n > 1 and current_idx in candidates:
-                candidates.remove(current_idx)
-            return random.choice(candidates)
+            return random.choice(candidate_indices)
 
         r = random.random() * total
         acc = 0.0
-        for idx, w in enumerate(weights):
+        for idx, w in zip(candidate_indices, weights):
             acc += w
             if r <= acc:
                 return idx
 
         # Numerischer Fallback
-        return n - 1
+        return candidate_indices[-1]
+
 
     def _get_current_vocab(self):
         if not getattr(self, "all_vocab_list", None):
@@ -2411,13 +3340,14 @@ class VokabaApp(App):
 
         for opt in answers:
             btn = RoundedButton(
-                text=str(opt.get("foreign_language", "")),
+                text=self._format_answer_lines(opt),
                 bg_color=APP_COLORS["card"],
                 color=APP_COLORS["text"],
                 font_size=config["settings"]["gui"]["title_font_size"],
                 size_hint=(1, None),
                 height=dp(70),
             )
+
             btn.bind(
                 on_press=lambda instance, choice=opt: self.multiple_choice_func(
                     correct_vocab, choice, instance
@@ -2462,6 +3392,13 @@ class VokabaApp(App):
             )
         self._adjust_knowledge_level(correct_vocab, delta)
 
+        # SRS-Infos aktualisieren
+        self.update_srs(
+            correct_vocab,
+            was_correct=is_correct,
+            quality=1.0 if is_correct else 0.0,
+        )
+
         if is_correct:
             if isinstance(button, RoundedButton):
                 button.set_bg_color(APP_COLORS["success"])
@@ -2495,6 +3432,11 @@ class VokabaApp(App):
 
     def _advance_after_correct(self):
         """After a correct multiple choice answer, go to the next card/mode."""
+        # Session-Schritt: Multiple-Choice-Karte abgeschlossen
+        if self._register_session_step(was_correct=True):
+            self.multiple_choice_locked = False
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -2601,7 +3543,7 @@ class VokabaApp(App):
         shuffled_items = self.connect_pairs_items[:]
         random.shuffle(shuffled_items)
         for entry in shuffled_items:
-            text = entry.get("foreign_language", "")
+            text = self._format_answer_lines(entry)
             btn = RoundedButton(
                 text=text,
                 bg_color=APP_COLORS["card"],
@@ -2618,6 +3560,7 @@ class VokabaApp(App):
             )
             self.connect_pairs_right_buttons[btn] = entry
             right_col.add_widget(btn)
+
 
         content_row.add_widget(left_col)
         content_row.add_widget(right_col)
@@ -2759,6 +3702,16 @@ class VokabaApp(App):
 
     def _connect_pairs_finish(self):
         """After all 5 pairs are matched, go to the next card/mode."""
+        # SRS für alle beteiligten Wörter
+        items = getattr(self, "connect_pairs_items", []) or []
+        for entry in items:
+            self.update_srs(entry, was_correct=True, quality=1.0)
+
+        # Session-Schritt (5 Paare = 5 „Exposures“)
+        steps = len(items) if items else 1
+        if self._register_session_step(was_correct=True, steps=steps):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -2840,6 +3793,16 @@ class VokabaApp(App):
             height=dp(40),
         )
         card.add_widget(prompt_lbl)
+
+        # optionale dritte Spalte direkt darunter anzeigen
+        latin_extra = (correct_vocab.get("latin_language") or "").strip()
+        if latin_extra:
+            latin_lbl = self.make_text_label(
+                latin_extra,
+                size_hint_y=None,
+                height=dp(30),
+            )
+            card.add_widget(latin_lbl)
 
         # Instruction text
         instruction = self.make_text_label(
@@ -3009,6 +3972,14 @@ class VokabaApp(App):
             )
             self._adjust_knowledge_level(vocab, bonus)
 
+        # SRS-Update (Wort erfolgreich zusammengesetzt)
+        if vocab is not None:
+            self.update_srs(vocab, was_correct=True, quality=1.0)
+
+        # Session-Schritt
+        if self._register_session_step(was_correct=True):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -3018,8 +3989,18 @@ class VokabaApp(App):
         self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
+
     def letter_salad_skip(self, instance=None):
         """Skip the current vocab entry in letter salad mode."""
+        vocab = getattr(self, "letter_salad_vocab", None)
+        if vocab is not None:
+            # SRS – Karte als „falsch/übersprungen“ markieren
+            self.update_srs(vocab, was_correct=False, quality=0.0)
+
+        # Session-Schritt (übersprungen zählt als falsch)
+        if self._register_session_step(was_correct=False):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -3119,7 +4100,11 @@ class VokabaApp(App):
                 continue
 
             own = vocab.get("own_language", "") or ""
-            base_text = f"[b]{own}[/b]: "
+            third = (vocab.get("latin_language") or "").strip()
+            if third:
+                base_text = f"[b]{own}[/b] ({third}): "
+            else:
+                base_text = f"[b]{own}[/b]: "
 
             lbl = self.make_text_label(
                 base_text,
@@ -3127,6 +4112,7 @@ class VokabaApp(App):
                 height=dp(24),
             )
             lbl.markup = True
+
 
             item = {
                 "vocab": vocab,
@@ -3375,6 +4361,17 @@ class VokabaApp(App):
 
     def _syllable_salad_finish(self):
         """Wenn alle Wörter korrekt gebaut wurden, gehe weiter."""
+        # NEU: SRS für alle Wörter dieser Runde
+        items = getattr(self, "syllable_salad_items", []) or []
+        for item in items:
+            vocab = item.get("vocab")
+            if vocab is not None:
+                self.update_srs(vocab, was_correct=True, quality=1.0)
+
+        steps = len(items) if items else 1
+        if self._register_session_step(was_correct=True, steps=steps):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -3384,8 +4381,19 @@ class VokabaApp(App):
         self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
         self.show_current_card()
 
+
     def syllable_salad_skip(self, instance=None):
         """Überspringt den aktuellen Silben-Durchgang."""
+        items = getattr(self, "syllable_salad_items", []) or []
+        for item in items:
+            vocab = item.get("vocab")
+            if vocab is not None:
+                self.update_srs(vocab, was_correct=False, quality=0.0)
+
+        steps = len(items) if items else 1
+        if self._register_session_step(was_correct=False, steps=steps):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -3569,9 +4577,10 @@ class VokabaApp(App):
 
         # Original-Lösung: Hauptwort extrahieren (z.B. '(to) walk' -> 'walk')
         foreign_full = current_vocab.get("foreign_language", "") or ""
+        latin_full = current_vocab.get("latin_language", "") or ""
         solution_main = self._extract_main_lexeme(foreign_full)
 
-        # Klassifikation + farbiges Rendering
+        # Klassifikation + farbiges Rendering (gegen die Fremdsprache)
         user_classes, sol_classes = self._classify_typed_vs_solution(
             solution_main, user_input
         )
@@ -3579,6 +4588,11 @@ class VokabaApp(App):
         colored_solution = self._colorize_with_classes(
             solution_main, sol_classes
         )
+
+        # evtl. dritte Spalte im Feedback anhängen
+        latin_suffix = ""
+        if latin_full.strip():
+            latin_suffix = f"\n[b]3. Spalte:[/b] {latin_full}"
 
         # Korrektheit (ohne Akzente, ohne Formatierungszeichen, Klammern optional)
         is_correct = self._is_correct_typed_answer(user_input, current_vocab)
@@ -3608,6 +4622,7 @@ class VokabaApp(App):
                     f"{success_text}\n"
                     f"[b]Deine Eingabe:[/b] {colored_user}\n"
                     f"[b]Lösung:[/b] {colored_solution}"
+                    f"{latin_suffix}"
                 )
                 anim = Animation(opacity=0.9, duration=0.1) + Animation(
                     opacity=1, duration=0.1
@@ -3625,17 +4640,17 @@ class VokabaApp(App):
                     "typing_mode_correct",
                     "Richtig!",
                 )
-                self.typing_feedback_label.text = success_text
+                # ggf. dritte Spalte trotzdem anzeigen
+                self.typing_feedback_label.text = success_text + latin_suffix
 
             anim = Animation(opacity=0.9, duration=0.1) + Animation(
                 opacity=1, duration=0.1
             )
             anim.start(self.typing_feedback_label)
-            # Auch bei falscher Antwort: Selbstbewertung erlauben
+            # auch bei richtiger Antwort: Selbstbewertung erlauben
             if hasattr(self, "typing_selfrating_box"):
                 self.typing_selfrating_box.disabled = False
                 self.typing_selfrating_box.opacity = 1
-
 
         else:
             # Knowledge update: penalty per typed character
@@ -3660,6 +4675,7 @@ class VokabaApp(App):
                 f"{wrong_text}\n"
                 f"[b]Deine Eingabe:[/b] {colored_user}\n"
                 f"[b]Lösung:[/b] {colored_solution}"
+                f"{latin_suffix}"
             )
 
             anim = Animation(opacity=0.6, duration=0.1) + Animation(
@@ -3681,6 +4697,15 @@ class VokabaApp(App):
 
     def typing_skip(self, instance=None):
         """Skip the current vocab entry in typing mode."""
+        current_vocab = self._get_current_vocab()
+        if current_vocab is not None:
+            # SRS – Karte als „falsch/übersprungen“
+            self.update_srs(current_vocab, was_correct=False, quality=0.0)
+
+        # Session-Schritt
+        if self._register_session_step(was_correct=False):
+            return
+
         if self.max_current_vocab_index > 1:
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=True)
         else:
@@ -3736,30 +4761,40 @@ class VokabaApp(App):
 
         # Own language
         form_layout.add_widget(
-            Label(
-                text=labels.add_own_language,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_own_language,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text=""))
-        self.add_own_language = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False
-        ))
+        self.add_own_language = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+            )
+        )
         form_layout.add_widget(self.add_own_language)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Foreign language
         form_layout.add_widget(
-            Label(
-                text=labels.add_foreign_language,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_foreign_language,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text=""))
-        self.add_foreign_language = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False
-        ))
+        self.add_foreign_language = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+            )
+        )
         form_layout.add_widget(self.add_foreign_language)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
@@ -3768,32 +4803,40 @@ class VokabaApp(App):
         self.third_column_input = None
         if save.read_languages("vocab/" + stack)[3]:
             form_layout.add_widget(
-                Label(
-                    text=labels.add_third_column,
-                    font_size=int(
-                        config["settings"]["gui"]["title_font_size"]
-                    ),
+                self.make_title_label(
+                    labels.add_third_column,
+                    size_hint_y=None,
+                    height=dp(40),
                 )
             )
             form_layout.add_widget(Label(text=""))
-            self.third_column_input = self.style_textinput(TextInput(
-                size_hint_y=None, height=60, multiline=False
-            ))
+            self.third_column_input = self.style_textinput(
+                TextInput(
+                    size_hint_y=None,
+                    height=60,
+                    multiline=False,
+                )
+            )
             form_layout.add_widget(self.third_column_input)
 
         form_layout.add_widget(Label(text="\n\n\n\n"))
 
         # Additional info
         form_layout.add_widget(
-            Label(
-                text=labels.add_additional_info,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_additional_info,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text=""))
-        self.add_additional_info = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False
-        ))
+        self.add_additional_info = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+            )
+        )
         form_layout.add_widget(self.add_additional_info)
 
         # Add button
@@ -3832,20 +4875,61 @@ class VokabaApp(App):
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
 
+
     def add_vocab_button_func(self, vocab, stack, instance=None):
         """Handle saving a new vocab entry from the add-vocab form."""
-        add_vocab_own_lanauage = self.add_own_language.text
-        add_vocab_foreign_language = self.add_foreign_language.text
+        add_vocab_own_language = self.add_own_language.text.strip()
+        add_vocab_foreign_language = self.add_foreign_language.text.strip()
         if self.third_column_input:
-            add_vocab_third_column = self.third_column_input.text
+            add_vocab_third_column = self.third_column_input.text.strip()
         else:
-            add_vocab_third_column = None
-        add_vocab_additional_info = self.add_additional_info.text
+            add_vocab_third_column = ""
+        add_vocab_additional_info = self.add_additional_info.text.strip()
         log("Adding Vocab. Loaded textbox content")
+
+        # Keine halbleeren Einträge: beide Sprachen müssen gesetzt sein
+        if not add_vocab_own_language or not add_vocab_foreign_language:
+            log("add_vocab_button_func: incomplete vocab (one or both languages empty) -> not saved.")
+
+            msg = getattr(
+                labels,
+                "add_vocab_both_languages_required",
+                "Bitte fülle beide Sprachfelder aus.",
+            )
+            ok_text = getattr(labels, "ok", "OK")
+
+            content = BoxLayout(
+                orientation="vertical",
+                spacing=dp(8),
+                padding=dp(12),
+            )
+            content.add_widget(
+                self.make_text_label(
+                    msg,
+                    size_hint_y=None,
+                    height=dp(40),
+                )
+            )
+            ok_btn = self.make_primary_button(
+                ok_text,
+                size_hint=(1, None),
+                height=dp(40),
+            )
+            content.add_widget(ok_btn)
+
+            popup = Popup(
+                title="",
+                content=content,
+                size_hint=(0.6, 0.3),
+            )
+            ok_btn.bind(on_press=lambda *_: popup.dismiss())
+            popup.open()
+            return
+
         if self.third_column_input:
             vocab.append(
                 {
-                    "own_language": add_vocab_own_lanauage,
+                    "own_language": add_vocab_own_language,
                     "foreign_language": add_vocab_foreign_language,
                     "latin_language": add_vocab_third_column,
                     "info": add_vocab_additional_info,
@@ -3855,7 +4939,7 @@ class VokabaApp(App):
         else:
             vocab.append(
                 {
-                    "own_language": add_vocab_own_lanauage,
+                    "own_language": add_vocab_own_language,
                     "foreign_language": add_vocab_foreign_language,
                     "latin_language": "",
                     "info": add_vocab_additional_info,
@@ -3918,46 +5002,63 @@ class VokabaApp(App):
 
         # Own language name
         form_layout.add_widget(
-            Label(
-                text=labels.add_own_language,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_own_language,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
-        self.edit_own_language_textbox = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False, text=metadata[0]
-        ))
+        self.edit_own_language_textbox = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+                text=metadata[0],
+            )
+        )
         form_layout.add_widget(self.edit_own_language_textbox)
         form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
         # Foreign language name
         form_layout.add_widget(
-            Label(
-                text=labels.add_foreign_language,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_foreign_language,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
-        self.edit_foreign_language_textbox = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False, text=metadata[1]
-        ))
+        self.edit_foreign_language_textbox = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+                text=metadata[1],
+            )
+        )
         form_layout.add_widget(self.edit_foreign_language_textbox)
         form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
 
         # Stack filename (without extension)
         form_layout.add_widget(
-            Label(
-                text=labels.add_stack_filename,
-                font_size=int(config["settings"]["gui"]["title_font_size"]),
+            self.make_title_label(
+                labels.add_stack_filename,
+                size_hint_y=None,
+                height=dp(40),
             )
         )
         form_layout.add_widget(Label(text="\n\n\n\n\n\n"))
-        self.edit_name_textbox = self.style_textinput(TextInput(
-            size_hint_y=None, height=60, multiline=False, text=stack[:-4]
-        ))
+        self.edit_name_textbox = self.style_textinput(
+            TextInput(
+                size_hint_y=None,
+                height=60,
+                multiline=False,
+                text=stack[:-4],
+            )
+        )
         form_layout.add_widget(self.edit_name_textbox)
         form_layout.add_widget(Label(text="\n\n\n\n\n\n\n\n\n"))
-
 
         # Top-center: "Save all" button
         top_center = AnchorLayout(
@@ -3976,10 +5077,10 @@ class VokabaApp(App):
         top_center.add_widget(save_all_button)
         self.window.add_widget(top_center)
 
-
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
+
 
     # ------------------------------------------------------------------
     # Edit vocab grid (bulk editing)
@@ -4057,6 +5158,9 @@ class VokabaApp(App):
         front/back flashcards.
         """
         log("entered learn vocab menu")
+        # Legacy-Modus zählt ebenfalls zur Gesamtlernzeit
+        self.session_start_time = datetime.now()
+
         self.window.clear_widgets()
         self.all_vocab_list = []
         self.current_vocab_index = 0
@@ -4209,8 +5313,14 @@ class VokabaApp(App):
                 own, foreign, info = [ti.text.strip() for ti in row]
                 latin = ""
 
-            # Skip completely empty rows
-            if not own and not foreign and not latin and not info:
+            # keine Vokabel ohne Sprachen speichern
+            if not own and not foreign:
+                # komplett leer oder nur Zusatzinfos -> ignorieren
+                continue
+
+            # nur eine Sprache gefüllt? -> auch ignorieren
+            if not own or not foreign:
+                log("read_vocab_from_grid: skipped row with only one language filled.")
                 continue
 
             entry = {
@@ -4220,7 +5330,7 @@ class VokabaApp(App):
                 "info": info,
             }
 
-            # NEU: knowledge_level aus der alten Liste übernehmen (falls vorhanden),
+            # knowledge_level aus der alten Liste übernehmen (falls vorhanden),
             # sonst 0.0
             if original_vocab_list is not None and idx < len(original_vocab_list):
                 entry["knowledge_level"] = original_vocab_list[idx].get("knowledge_level", 0.0)

@@ -1,7 +1,7 @@
 settings:
   gui:
-    padding_multiplicator: 0.6792056791716988
-    text_font_size: 18
+    padding_multiplicator: 0.6154463077780131
+    text_font_size: 21
     title_font_size: 34
   modes:
     back_front: true
@@ -11,7 +11,10 @@ settings:
     multiple_choice: true
     syllable_salad: true
     typing: true
+  session_size: 500
   theme:
     base_preset: dark
     custom_colors: {}
     preset: dark
+stats:
+  total_learn_time_seconds: 231

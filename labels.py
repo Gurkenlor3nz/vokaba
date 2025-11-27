@@ -137,3 +137,99 @@ self_rating_very_easy = "Sehr einfach"
 self_rating_easy = "Einfach"
 self_rating_hard = "Schwierig"
 self_rating_very_hard = "Sehr schwer"
+
+
+# ---------------------------------------------------------------------------
+# About / Über Vokaba
+# ---------------------------------------------------------------------------
+
+
+about_title = "Über Vokaba"
+
+about_intro = (
+    "Vokaba ist ein super-minimalistischer Vokabeltrainer für Menschen, "
+    "die lieber lernen als sich durch Menüs zu klicken.\n\n"
+    "Kein Account, keine Werbung, kein Cloud-Zwang – nur deine Stacks, "
+    "ein klares Interface und ein Lernsystem, das sich an dich anpasst."
+)
+
+about_heading_learning = "Was Vokaba unter der Haube macht"
+
+about_bullet_adaptive = (
+    "• Adaptive Wiederholung: Jede Vokabel hat einen unsichtbaren Wissens-Score. "
+    "Was du sicher kannst, siehst du seltener – schwierige Wörter kommen "
+    "automatisch öfter dran."
+)
+
+about_bullet_modes = (
+    "• Abwechslungsreiche Lernmodi: klassische Karten, Multiple Choice, "
+    "Buchstabensalat, Silben-Modus und Tipp-Eingabe. Vokaba wechselt die Modi "
+    "für dich, damit dein Gehirn wach bleibt."
+)
+
+about_bullet_csv = (
+    "• Offene Daten: Deine Vokabeln liegen in einfachen CSV-Dateien. "
+    "Perfekt zum Versionieren, Teilen oder zum Bearbeiten mit eigenen Skripten."
+)
+
+about_bullet_design = (
+    "• Fokus auf das Wesentliche: Dark/Light-Theme, ein paar Regler – "
+    "der Rest ist Platz für deine Inhalte."
+)
+
+about_alpha_label = (
+    "Diese Version ist ein früher Alpha-Release.\n"
+    "Es kann also noch Ecken und Kanten geben – Feedback, Bugreports und "
+    "Ideen sind ausdrücklich willkommen."
+)
+
+about_heading_discord = "Discord & Support"
+
+about_discord_text = (
+    "Wenn etwas crasht, sich komisch anfühlt oder du eine Idee für neue "
+    "Funktionen hast, schreib uns gerne auf Discord. Dort gibt es Support, "
+    "Bugreports, Feature-Vorschläge und ab und zu Sneak Peeks auf neue Features."
+)
+
+about_discord_button = "Zum Discord-Server"
+
+about_discord_link_prefix = "Direkter Link:"
+
+
+# ---------------------------------------------------------------------------
+# Statistics / Dashboard
+# ---------------------------------------------------------------------------
+
+# Dashboard / Stats
+main_stats_label_template = "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
+main_stats_hint = "Tipp: Klick auf „Lernen“ – Vokaba wählt automatisch passende Modi und Vokabeln."
+
+# Settings: Sessiongröße
+settings_session_size_slider = "Karten pro Lernsitzung"
+
+# Session-Summary
+session_summary_title = "Session abgeschlossen"
+session_summary_text = (
+    "Du hast {done} Karten in dieser Session abgeschlossen.\n"
+    "Richtig: {correct}   Schwer / falsch: {wrong}\n"
+    "Session-Ziel: {goal} Karten."
+)
+session_summary_continue_button = "Weiterlernen"
+session_summary_back_button = "Zurück zum Hauptmenü"
+
+
+# Settings: Sessiongröße
+settings_session_size_label = "Karten pro Lernsitzung"
+settings_session_size_unit = "Karten"
+
+# Dashboard-Texte
+dashboard_title = "Dashboard"
+dashboard_overview_header = "Überblick"
+dashboard_learning_header = "Lernfortschritt"
+
+dashboard_overview_stats = "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
+dashboard_learned_progress = "Gelernte Vokabeln: {learned}/{total} ({percent:.0f} %)"
+dashboard_average_knowledge = "Durchschnittlicher Wissensstand: {avg:.0f} %"
+dashboard_time_spent = "Gesamtlernzeit: {time}"
+
+dashboard_hint = "Tipp: Schau ab und zu ins Dashboard, um deinen Fortschritt im Blick zu behalten."
