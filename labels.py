@@ -227,7 +227,7 @@ dashboard_title = "Dashboard"
 dashboard_overview_header = "Überblick"
 dashboard_learning_header = "Lernfortschritt"
 
-dashboard_overview_stats = "Stacks: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
+dashboard_overview_stats = "Stapel: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
 dashboard_learned_progress = "Gelernte Vokabeln: {learned}/{total} ({percent:.0f} %)"
 dashboard_average_knowledge = "Durchschnittlicher Wissensstand: {avg:.0f} %"
 dashboard_time_spent = "Gesamtlernzeit: {time}"

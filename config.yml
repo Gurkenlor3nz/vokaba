@@ -17,4 +17,4 @@ settings:
     custom_colors: {}
     preset: dark
 stats:
-  total_learn_time_seconds: 231
+  total_learn_time_seconds: 1000000000102

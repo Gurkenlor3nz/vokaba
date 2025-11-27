@@ -1320,7 +1320,7 @@ class VokabaApp(App):
         content.add_widget(discord_text)
 
         # Discord-Link (hier deinen echten Invite eintragen)
-        DISCORD_URL = "https://discord.gg/DEIN_DISCORD_LINK"
+        DISCORD_URL = "https://discord.gg/zRRmfgt8Cn"
 
         discord_button = self.make_primary_button(
             getattr(labels, "about_discord_button", "Discord öffnen"),
