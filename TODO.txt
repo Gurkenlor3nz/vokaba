@@ -5,44 +5,10 @@ GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingst
 als exe für Win, bin oder bash für Linux (Portabel)
 tts einbauen
 Ocr erschließen
-
+Ki für vokabel erkennung
 
 ---Android---
 Andriod app (vllt. Buildozer)
-
------ Menu_--------
-1 button für stapel
--
-0=0.08
-
-
-
-Sofort:
-
-Score von 0 bis 1, wie gut man wokabeln kann. Selbsteinschätzung bei Karteikarten, richtig bei mc=+, falsch=-
-
-ÜBUNGEN I <0.3
-×Karteikarte Hint
-×karteikarte Bewerten
-×Multiple choice 4
-×zuordnen
-
-ÜBUNGEN II0.3<>0.8
-×Buchstabensalat
-buchstabensuppe
-×Silben
-Karteikarte bewerten
-×Multiple choice
-Buchstabengitter
-×Zuordnen
-
-
-ÜBUNGENIII
-×Schreiben
-Buchstabengitter
-×Buchstabensalat
-buchstabensuppe
-×Silben
 
 
 
