@@ -18,6 +18,6 @@ settings:
     custom_colors: {}
     preset: dark
 stats:
-  daily_cards_done: 24
-  daily_progress_date: '2025-11-27'
+  daily_cards_done: 0
+  daily_progress_date: '2025-11-29'
   total_learn_time_seconds: 1000000000297

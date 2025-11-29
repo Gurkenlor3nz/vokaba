@@ -23,6 +23,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.graphics import Color, RoundedRectangle
 from kivy.animation import Animation
+from kivy.utils import platform
 
 # Kivy layouts & widgets
 from kivy.uix.anchorlayout import AnchorLayout
@@ -48,7 +49,9 @@ import save
 # Global configuration and simple shared state
 # ---------------------------------------------------------------------------
 
-Config.set("input", "mouse", "mouse,disable_multitouch")
+# Multitouch nur am Desktop deaktivieren, nicht auf Android/Tablet
+if platform in ("win", "linux", "macosx"):
+    Config.set("input", "mouse", "mouse,disable_multitouch")
 selected_stack = ""
 global vocab_current
 global title_size_slider
@@ -227,9 +230,12 @@ class VokabaApp(App):
         apply_theme_from_config()
 
         try:
-            Window.size = (1280, 800)
+            if platform in ("win", "linux", "macosx"):
+                Window.size = (1280, 800)
         except Exception as e:
             log(f"Could not set window size: {e}")
+
+        self.current_focus_input = None
 
         self.window = FloatLayout()
         self.scroll = ScrollView(size_hint=(1, 1))
@@ -391,7 +397,57 @@ class VokabaApp(App):
         ti.cursor_color = APP_COLORS["accent"]
         ti.padding = [dp(8), dp(8), dp(8), dp(8)]
         ti.font_size = int(config["settings"]["gui"]["text_font_size"])
+
+        def _on_focus(instance, value):
+            if value:
+                # aktuelles TextInput merken, z.B. für Akzent-Leiste
+                self.current_focus_input = instance
+
+        ti.bind(focus=_on_focus)
+
         return ti
+
+
+    def create_accent_bar(self):
+        """
+        Kleine Leiste mit französischen Akzenten.
+        Klick fügt das Zeichen in das aktuell fokussierte TextInput ein.
+        """
+        accents = ["é", "è", "ê", "ë",
+                   "à", "â",
+                   "î", "ï",
+                   "ô",
+                   "ù", "û",
+                   "ç",
+                   "œ", "æ"]
+
+        bar = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(4),
+        )
+
+        for ch in accents:
+            btn = self.make_secondary_button(
+                ch,
+                size_hint=(None, 1),
+                width=dp(40),
+            )
+
+            def make_handler(char):
+                def _insert(instance):
+                    ti = getattr(self, "current_focus_input", None)
+                    if isinstance(ti, TextInput):
+                        # fügt das Zeichen an der Cursor-Position ein
+                        ti.insert_text(char)
+                        ti.focus = True
+                return _insert
+
+            btn.bind(on_press=make_handler(ch))
+            bar.add_widget(btn)
+
+        return bar
 
 
     def get_textinput_height(self) -> float:
@@ -4906,6 +4962,8 @@ class VokabaApp(App):
         self.typing_input.bind(on_text_validate=self.typing_check_answer)
         card.add_widget(self.typing_input)
 
+        card.add_widget(self.create_accent_bar())
+
         # Feedback-Label
         self.typing_feedback_label = self.make_text_label(
             "",
@@ -5263,6 +5321,14 @@ class VokabaApp(App):
             )
         )
         form_layout.add_widget(self.add_additional_info)
+
+        accent_bar_label = self.make_text_label(
+            "Akzent-Hilfe (Tippen zum Einfügen):",
+            size_hint_y=None,
+            height=dp(24),
+        )
+        form_layout.add_widget(accent_bar_label)
+        form_layout.add_widget(self.create_accent_bar())
 
         # Inline error label (statt Popup)
         self.add_vocab_error_label = Label(
