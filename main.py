@@ -12,6 +12,12 @@ import sys
 import subprocess
 import shutil
 
+try:
+    from plyer import filechooser as plyer_filechooser
+except Exception:
+    plyer_filechooser = None
+
+
 # Third-party imports
 import yaml
 
@@ -469,6 +475,34 @@ class VokabaApp(App):
         """Adaptive TextInput height based on current font size."""
         base = int(config["settings"]["gui"]["text_font_size"])
         return dp(base * 2.0)
+
+
+    def get_default_downloads_dir(self) -> str:
+        """
+        Versucht, einen sinnvollen Download-Ordner zu finden:
+        - Desktop: ~/Downloads
+        - Android: typische Download-Pfade inkl. /storage/documents/downloads
+        Fallback ist immer das Home-Verzeichnis.
+        """
+        if platform == "android":
+            candidates = [
+                "/storage/emulated/0/Download",
+                "/storage/emulated/0/Downloads",
+                "/storage/emulated/0/Documents/Downloads",
+                "/storage/documents/downloads",  # dein Wunschpfad
+            ]
+        else:
+            home = os.path.expanduser("~")
+            candidates = [
+                os.path.join(home, "Downloads"),
+                home,
+            ]
+
+        for p in candidates:
+            if os.path.isdir(p):
+                return p
+
+        return os.path.expanduser("~")
 
 
     def _count_unique_vocab_pairs(self):
@@ -1871,6 +1905,22 @@ class VokabaApp(App):
         )
         grid.add_widget(learn_vocab_button)
 
+        # Edit vocab (alle Vokabeln in Tabelle bearbeiten)
+        edit_vocab_text = getattr(
+            labels,
+            "edit_vocab_button_text",
+            "Vokabeln bearbeiten",
+        )
+        edit_vocab_button = self.make_secondary_button(
+            edit_vocab_text,
+            size_hint_y=None,
+            height=dp(60),
+        )
+        edit_vocab_button.bind(
+            on_press=lambda instance, v=vocab_current: self.edit_vocab(stack, v)
+        )
+        grid.add_widget(edit_vocab_button)
+
         # Import / Export – zwei Buttons nebeneinander
         import_export_row = BoxLayout(
             orientation="horizontal",
@@ -2048,9 +2098,52 @@ class VokabaApp(App):
         vocab_root = getattr(labels, "vocab_path", "vocab")
         target = os.path.join(vocab_root, stack)
 
-        default_path = os.path.expanduser("~")
+        # -------------------------
+        # 1) Versuch: System-Dateidialog via plyer.filechooser
+        # -------------------------
+        if plyer_filechooser is not None:
+            log("import_stack_dialog: using plyer.filechooser (system dialog)")
+
+            def _on_selection(selection):
+                # Wird vom Systemdialog asynchron aufgerufen
+                if not selection:
+                    log("import_stack_dialog: no file selected")
+                    return
+                src_file = selection[0]
+                try:
+                    # Sicherung der alten Datei
+                    if os.path.exists(target):
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        backup = target + ".backup_" + timestamp
+                        shutil.copy2(target, backup)
+                        log(f"created backup '{backup}' before import")
+
+                    shutil.copy2(src_file, target)
+                    log(f"imported '{src_file}' into '{target}'")
+                    # Stack-View neu laden
+                    self.select_stack(stack)
+                except Exception as e:
+                    log(f"import_stack_dialog (plyer) failed: {e}")
+
+            # Nur CSV-Dateien anzeigen, wo unterstützt
+            try:
+                plyer_filechooser.open_file(
+                    on_selection=_on_selection,
+                    filters=["*.csv"],
+                )
+                return  # Systemdialog ist geöffnet, Funktion endet hier
+            except Exception as e:
+                log(f"plyer.filechooser failed, falling back to Kivy FileChooser: {e}")
+                # fällt dann unten in den Kivy-FileChooser-Teil
+
+        # -------------------------
+        # 2) Fallback: Kivy-FileChooser mit Download-Ordner als Startpfad
+        # -------------------------
+        default_path = self.get_default_downloads_dir()
         if not os.path.isdir(default_path):
-            default_path = os.path.abspath(vocab_root)
+            default_path = os.path.expanduser("~")
+
+        log(f"import_stack_dialog: using Kivy FileChooser, path='{default_path}'")
 
         chooser = FileChooserIconView(
             path=default_path,
@@ -2108,7 +2201,7 @@ class VokabaApp(App):
                 # Stack-View neu laden
                 self.select_stack(stack)
             except Exception as e:
-                log(f"import_stack_dialog failed: {e}")
+                log(f"import_stack_dialog (kivy) failed: {e}")
                 popup.dismiss()
 
         ok_btn.bind(on_press=_do_import)
@@ -5383,6 +5476,10 @@ class VokabaApp(App):
                 self.add_vocab_button,
             ]
 
+        # Button separat merken – wird bei Enter ausgelöst
+        self.add_vocab_button_widget = self.add_vocab_button
+
+
         # Keyboard-Events für Tab/Enter
         Window.bind(on_key_down=self.on_key_down)
 
@@ -5718,14 +5815,25 @@ class VokabaApp(App):
         stack = self.edit_name_textbox.text + ".csv"
         self.select_stack(stack)
 
+    from kivy.clock import Clock  # hast du oben ja schon
+
     def clear_inputs(self):
-        """Clear add-vocab form fields and focus the first input."""
-        self.add_own_language.text = ""
+        """Clear add-vocab form fields and focus the first (top) input."""
+        # Felder leeren
         self.add_foreign_language.text = ""
-        if self.third_column_input:
+        self.add_own_language.text = ""
+        if getattr(self, "third_column_input", None):
             self.third_column_input.text = ""
         self.add_additional_info.text = ""
-        self.add_own_language.focus = True
+
+        # Fokus im nächsten Frame auf die oberste Zeile legen
+        def _refocus(dt):
+            if hasattr(self, "add_foreign_language"):
+                self.add_foreign_language.focus = True
+                # damit die Akzent-Leiste weiß, wohin sie schreiben soll:
+                self.current_focus_input = self.add_foreign_language
+
+        Clock.schedule_once(_refocus, 0)
 
     def delete_stack(self, stack, instance=None):
         """Delete a stack CSV from disk and return to the main menu."""
@@ -5795,8 +5903,9 @@ class VokabaApp(App):
         if key == 13:
             current = self.widgets_add_vocab[focused_index]
             if isinstance(current, TextInput):
-                # letztes Widget in widgets_add_vocab ist der Add-Button
-                self.widgets_add_vocab[-1].trigger_action(duration=0.1)
+                btn = getattr(self, "add_vocab_button_widget", None)
+                if btn is not None:
+                    btn.trigger_action(duration=0.1)
             return True
 
         return False
