@@ -236,6 +236,8 @@ class VokabaApp(App):
             log(f"Could not set window size: {e}")
 
         self.current_focus_input = None
+        self._add_vocab_key_bind = None
+        self._add_vocab_stack = None
 
         self.window = FloatLayout()
         self.scroll = ScrollView(size_hint=(1, 1))
@@ -407,6 +409,13 @@ class VokabaApp(App):
 
         return ti
 
+    def _unbind_add_vocab_keys(self):
+        """Keyboard-Handler des Add-Vocab-Screens lösen (falls gebunden)."""
+        try:
+            Window.unbind(on_key_down=self.on_key_down)
+        except Exception:
+            pass
+
 
     def create_accent_bar(self):
         """
@@ -439,16 +448,22 @@ class VokabaApp(App):
                 def _insert(instance):
                     ti = getattr(self, "current_focus_input", None)
                     if isinstance(ti, TextInput):
-                        # fügt das Zeichen an der Cursor-Position ein
                         ti.insert_text(char)
-                        ti.focus = True
+
+                        # Fokus im nächsten Frame wieder aufs Textfeld legen,
+                        # damit Hardware-Tastatur weiter reinschreibt:
+                        def _refocus(dt):
+                            ti.focus = True
+                            self.current_focus_input = ti
+
+                        Clock.schedule_once(_refocus, 0)
+
                 return _insert
 
             btn.bind(on_press=make_handler(ch))
             bar.add_widget(btn)
 
         return bar
-
 
     def get_textinput_height(self) -> float:
         """Adaptive TextInput height based on current font size."""
@@ -623,6 +638,7 @@ class VokabaApp(App):
 
     def main_menu(self, instance=None):
         """Build and display the main menu with the stack list and learn button."""
+        self._unbind_add_vocab_keys()
         log("opened main menu")
         self.window.clear_widgets()
         global config
@@ -1773,6 +1789,7 @@ class VokabaApp(App):
 
     def select_stack(self, stack):
         """Show actions for a single stack (add/edit vocab, learn, delete)."""
+        self._unbind_add_vocab_keys()#
         vocab_file = str("vocab/" + stack)
         vocab_current = save.load_vocab(vocab_file)
         if "tuple" in str(type(vocab_current)):
@@ -5222,25 +5239,17 @@ class VokabaApp(App):
 
         padding_mul = float(config["settings"]["gui"]["padding_multiplicator"])
 
-        # Top-right: back button
-        top_right = AnchorLayout(
-            anchor_x="right",
-            anchor_y="top",
-            padding=30 * padding_mul,
-        )
-        back_button = self.make_icon_button(
-            "assets/back_button.png",
-            on_press=lambda instance: self.select_stack(stack),
-            size=dp(56),
-        )
-        top_right.add_widget(back_button)
-        self.window.add_widget(top_right)
+        # Merken, zu welchem Stack wir zurückspringen sollen
+        self._add_vocab_stack = stack
 
+        # --- Center-Content (Form + ScrollView) zuerst hinzufügen ---
         center_center = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
-            padding=40 * padding_mul,
+            # etwas mehr top padding, damit der Bereich nicht bis ganz oben geht
+            padding=[40 * padding_mul, 120 * padding_mul, 40 * padding_mul, 40 * padding_mul],
         )
+
         scroll = ScrollView(size_hint=(1, 1))
         form_layout = BoxLayout(
             orientation="vertical",
@@ -5322,6 +5331,7 @@ class VokabaApp(App):
         )
         form_layout.add_widget(self.add_additional_info)
 
+        # Akzent-Leiste
         accent_bar_label = self.make_text_label(
             "Akzent-Hilfe (Tippen zum Einfügen):",
             size_hint_y=None,
@@ -5330,7 +5340,7 @@ class VokabaApp(App):
         form_layout.add_widget(accent_bar_label)
         form_layout.add_widget(self.create_accent_bar())
 
-        # Inline error label (statt Popup)
+        # Inline-Fehlerlabel
         self.add_vocab_error_label = Label(
             text="",
             color=APP_COLORS["danger"],
@@ -5356,6 +5366,7 @@ class VokabaApp(App):
         )
         form_layout.add_widget(self.add_vocab_button)
 
+        # Reihenfolge für Keyboard-Navigation
         if self.third_column_input:
             self.widgets_add_vocab = [
                 self.add_foreign_language,
@@ -5372,12 +5383,26 @@ class VokabaApp(App):
                 self.add_vocab_button,
             ]
 
+        # Keyboard-Events für Tab/Enter
         Window.bind(on_key_down=self.on_key_down)
 
         scroll.add_widget(form_layout)
         center_center.add_widget(scroll)
         self.window.add_widget(center_center)
 
+        # --- Back-Button GANZ ZUM SCHLUSS hinzufügen (liegt dann oben) ---
+        top_right = AnchorLayout(
+            anchor_x="right",
+            anchor_y="top",
+            padding=30 * padding_mul,
+        )
+        back_button = self.make_icon_button(
+            "assets/back_button.png",
+            on_press=self._on_add_vocab_back,
+            size=dp(56),
+        )
+        top_right.add_widget(back_button)
+        self.window.add_widget(top_right)
 
 
     def add_vocab_button_func(self, vocab, stack, instance=None):
@@ -5714,46 +5739,82 @@ class VokabaApp(App):
 
     def on_key_down(self, window, key, scancode, codepoint, modifiers):
         """
-        Simple keyboard navigation for the add-vocab form.
+        Simple keyboard navigation für das Add-Vocab-Formular.
 
-        Tab / Shift+Tab moves focus between fields.
-        Enter presses the last widget (the add button).
+        WICHTIG:
+        - Nur Tab / Shift+Tab und Enter werden hier behandelt.
+        - Alle anderen Tasten (Akzent, Pfeile, Backspace, etc.)
+          gehen direkt an das fokussierte TextInput.
+        - Auf Android/Tablet: Taste "Zurück" (key 27) bringt im Add-Vocab-Screen
+          zurück zum Stapel statt nur den Fokus zu ändern.
         """
+
+        # Wenn wir gar keinen Add-Vocab-Screen aktiv haben, nichts machen
+        if not hasattr(self, "widgets_add_vocab") or not self.widgets_add_vocab:
+            return False
+
+        # Android/ESC-Backtaste: zurück zum Stapel, falls wir wissen, wohin
+        if key == 27:  # ESC / Android-Back
+            if self._add_vocab_stack:
+                stack = self._add_vocab_stack
+                self._unbind_add_vocab_keys()
+                self.select_stack(stack)
+                return True
+            # sonst Standardverhalten (App kümmert sich)
+            return False
+
+        # Ab hier: nur Tab und Enter abfangen
+        if key not in (9, 13):  # 9 = Tab, 13 = Enter
+            return False
+
+        # Aktuell fokussiertes Feld finden
         focused_index = None
         for i, widget in enumerate(self.widgets_add_vocab):
-            if hasattr(widget, "focus") and widget.focus:
+            if getattr(widget, "focus", False):
                 focused_index = i
                 break
 
+        # Wenn noch kein Feld Fokus hat: erstes TextInput fokussieren
         if focused_index is None:
             for widget in self.widgets_add_vocab:
                 if hasattr(widget, "focus"):
                     widget.focus = True
-                    return True
-
-        # Tab / Shift+Tab
-        if key == 9:
-            if focused_index is not None:
-                if "shift" in modifiers:
-                    next_index = (focused_index - 1) % len(
-                        self.widgets_add_vocab
-                    )
-                else:
-                    next_index = (focused_index + 1) % len(
-                        self.widgets_add_vocab
-                    )
-                self.widgets_add_vocab[next_index].focus = True
+                    break
             return True
 
-        # Enter
+        # Tab / Shift+Tab: zwischen Feldern springen
+        if key == 9:
+            if "shift" in modifiers:
+                next_index = (focused_index - 1) % len(self.widgets_add_vocab)
+            else:
+                next_index = (focused_index + 1) % len(self.widgets_add_vocab)
+            self.widgets_add_vocab[next_index].focus = True
+            return True
+
+        # Enter: wenn wir in einem TextInput sind, den "Hinzufügen"-Button klicken
         if key == 13:
-            if focused_index is not None:
-                current = self.widgets_add_vocab[focused_index]
-                if isinstance(current, TextInput):
-                    self.widgets_add_vocab[-1].trigger_action(duration=0.1)
+            current = self.widgets_add_vocab[focused_index]
+            if isinstance(current, TextInput):
+                # letztes Widget in widgets_add_vocab ist der Add-Button
+                self.widgets_add_vocab[-1].trigger_action(duration=0.1)
             return True
 
         return False
+
+
+    def _on_add_vocab_back(self, instance=None):
+        """
+        Wird vom Back-Icon im Add-Vocab-Screen aufgerufen.
+        Keyboard-Handler lösen und zurück zum Stack (oder Hauptmenü).
+        """
+        self._unbind_add_vocab_keys()
+
+        stack = getattr(self, "_add_vocab_stack", None)
+        if stack:
+            self.select_stack(stack)
+        else:
+            self.main_menu()
+
 
     def read_vocab_from_grid(self, textinput_matrix, latin_active, original_vocab_list=None):
         """
