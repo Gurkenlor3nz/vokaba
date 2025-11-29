@@ -1,6 +1,6 @@
 import csv
 import yaml
-
+import os
 
 def _normalize_knowledge_level(value):
     """
@@ -175,10 +175,87 @@ def change_languages(filename, new_own, new_foreign, new_latin, latin_active=Fal
 
 
 def load_settings():
-    # Load config from config.yml and set settings variables
-    with open("config.yml", "r") as file:
-        config_readable = yaml.safe_load(file)
-    return config_readable
+    """
+    Lädt config.yml. Wenn die Datei nicht existiert oder leer/kaputt ist,
+    wird sie mit sinnvollen Standardwerten neu angelegt und zurückgegeben.
+    """
+    # Default-Konfiguration, die zu deinem Code oben passt
+    default_config = {
+        "settings": {
+            "gui": {
+                "title_font_size": 32,
+                "text_font_size": 18,
+                "padding_multiplicator": 1.0,
+            },
+            "session_size": 20,
+            "theme": {
+                "preset": "dark",
+                "base_preset": "dark",
+                "custom_colors": {},
+            },
+            "modes": {
+                "front_back": True,
+                "back_front": True,
+                "multiple_choice": True,
+                "letter_salad": True,
+                "connect_pairs": True,
+                "typing": True,
+                "syllable_salad": True,
+            },
+        },
+        "stats": {
+            "daily_progress_date": None,
+            "daily_cards_done": 0,
+            "total_learn_time_seconds": 0,
+        },
+    }
+
+    # 1) Wenn die Datei gar nicht existiert: mit Defaults anlegen
+    if not os.path.exists("config.yml"):
+        with open("config.yml", "w", encoding="utf-8") as file:
+            yaml.dump(default_config, file, allow_unicode=True)
+        return default_config
+
+    # 2) Versuchen zu laden – bei Fehlern auf leere Config zurückfallen
+    try:
+        with open("config.yml", "r", encoding="utf-8") as file:
+            data = yaml.safe_load(file) or {}
+    except Exception:
+        data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    # 3) Defaults in bestehende Config "hineinmergen"
+    config = data
+
+    settings = config.setdefault("settings", {})
+    gui = settings.setdefault("gui", {})
+    gui.setdefault("title_font_size", default_config["settings"]["gui"]["title_font_size"])
+    gui.setdefault("text_font_size", default_config["settings"]["gui"]["text_font_size"])
+    gui.setdefault("padding_multiplicator", default_config["settings"]["gui"]["padding_multiplicator"])
+
+    settings.setdefault("session_size", default_config["settings"]["session_size"])
+
+    theme = settings.setdefault("theme", {})
+    theme.setdefault("preset", default_config["settings"]["theme"]["preset"])
+    theme.setdefault("base_preset", default_config["settings"]["theme"]["base_preset"])
+    theme.setdefault("custom_colors", default_config["settings"]["theme"]["custom_colors"].copy())
+
+    modes = settings.setdefault("modes", {})
+    for key, val in default_config["settings"]["modes"].items():
+        modes.setdefault(key, val)
+
+    stats = config.setdefault("stats", {})
+    for key, val in default_config["stats"].items():
+        stats.setdefault(key, val)
+
+    # 4) Vervollständigte Config wieder speichern (falls neue Defaults dazugekommen sind)
+    with open("config.yml", "w", encoding="utf-8") as file:
+        yaml.dump(config, file, allow_unicode=True)
+
+    return config
+
 
 
 def save_settings(config):
