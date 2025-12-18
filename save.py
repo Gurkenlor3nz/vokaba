@@ -1,92 +1,151 @@
 import csv
-import yaml
 import os
+import yaml
+from typing import Dict, List, Tuple, Optional
 
-def _normalize_knowledge_level(value):
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+def _normalize_knowledge_level(value) -> float:
     """
-    Normalisiert die 'Wie gut kenne ich das Wort?'-Zahl.
+    Normalize knowledge_level to a float in [0.0, 1.0].
 
-    - fehlend / leer / ungültig -> 0.0
-    - Komma wird als Dezimaltrenner akzeptiert
-    - Werte außerhalb [0, 1] -> 0.0
+    Accepts:
+    - None / empty -> 0.0
+    - int/float
+    - strings with "." or "," as decimal separator
+    - out-of-range -> clamped to [0.0, 1.0]
     """
     if value is None:
         return 0.0
 
-    # Bereits numerisch?
     if isinstance(value, (int, float)):
         v = float(value)
     else:
         s = str(value).strip()
         if not s:
             return 0.0
-        # deutsches Komma zulassen
         s = s.replace(",", ".")
         try:
             v = float(s)
         except ValueError:
             return 0.0
 
-    if 0.0 <= v <= 1.0:
-        return v
-    return 0.0
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+def _normalize_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _strip_outer_quotes_if_whole_line(line: str) -> str:
+    """
+    Your files sometimes store each CSV line as:
+        "a,b,c,d"
+    instead of:
+        a,b,c,d
+
+    If a line has exactly one leading and one trailing quote (count==2),
+    we remove them to restore a normal CSV line.
+
+    This keeps proper CSV quoting inside fields intact (if present).
+    """
+    s = line.strip("\n")
+    if len(s) >= 2 and s.startswith('"') and s.endswith('"') and s.count('"') == 2:
+        return s[1:-1]
+    return s
+
+
+def _read_file_lines_without_meta(filename: str) -> Tuple[List[str], Dict[str, str]]:
+    """
+    Reads file and returns:
+      (csv_lines, meta_dict)
+
+    meta lines look like:
+      # own_language=Deutsch
+    """
+    meta: Dict[str, str] = {}
+    csv_lines: List[str] = []
+
+    with open(filename, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.rstrip("\n")
+            if line.startswith("# "):
+                # meta
+                if "=" in line:
+                    key, val = line[2:].split("=", 1)
+                    meta[key.strip()] = val.strip()
+                continue
+            csv_lines.append(raw)  # keep newline for csv module
+
+    return csv_lines, meta
+
+
+# ------------------------------------------------------------
+# Vocab CSV
+# ------------------------------------------------------------
+
+VOCAB_FIELDNAMES = [
+    "own_language",
+    "foreign_language",
+    "latin_language",
+    "info",
+    "knowledge_level",
+    "srs_streak",
+    "srs_last_seen",
+    "srs_due",
+]
 
 
 def save_to_vocab(
-    vocab,
-    filename,
-    own_lang="Deutsch",
-    foreign_lang="Englisch",
-    latin_lang="Latein",
-    latin_active=False,
-):
+    vocab: List[Dict],
+    filename: str,
+    own_lang: str = "Deutsch",
+    foreign_lang: str = "Englisch",
+    latin_lang: str = "Latein",
+    latin_active: bool = False,
+) -> None:
+    """
+    Writes vocab list to CSV with meta header lines.
+    Output is normal CSV (NOT whole-line quoted).
+    """
+    os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
+
     with open(filename, "w", newline="", encoding="utf-8") as f:
-        # Metadaten oben als Kommentarzeilen
         f.write(f"# own_language={own_lang}\n")
         f.write(f"# foreign_language={foreign_lang}\n")
         f.write(f"# latin_language={latin_lang}\n")
-        f.write(f"# latin_active={str(latin_active)}\n")
-
-        # JETZT 8 Spalten: 3 Sprachen + info + knowledge_level + SRS
-        fieldnames = [
-            "own_language",
-            "foreign_language",
-            "latin_language",
-            "info",
-            "knowledge_level",
-            "srs_streak",
-            "srs_last_seen",
-            "srs_due",
-        ]
+        f.write(f"# latin_active={str(bool(latin_active))}\n")
 
         writer = csv.DictWriter(
             f,
-            fieldnames=fieldnames,
-            extrasaction="ignore",  # falls später noch mehr Felder dazu kommen
+            fieldnames=VOCAB_FIELDNAMES,
+            extrasaction="ignore",
+            quoting=csv.QUOTE_MINIMAL,
         )
         writer.writeheader()
 
         for row in vocab:
-            # fehlende Felder auffüllen
-            if "latin_language" not in row:
-                row["latin_language"] = ""
-            if "info" not in row:
-                row["info"] = ""
+            if not isinstance(row, dict):
+                continue
 
-            # knowledge_level normalisieren
-            row["knowledge_level"] = _normalize_knowledge_level(
-                row.get("knowledge_level", 0.0)
-            )
+            row = dict(row)  # avoid mutating caller data
 
-            # SRS-Felder robust setzen
-            # streak: immer int, ansonsten 0
-            try:
-                streak = int(row.get("srs_streak", 0) or 0)
-            except (TypeError, ValueError):
-                streak = 0
-            row["srs_streak"] = streak
+            row.setdefault("latin_language", "")
+            row.setdefault("info", "")
 
-            # Zeiten als Strings (ISO-Format oder leer)
+            row["knowledge_level"] = _normalize_knowledge_level(row.get("knowledge_level", 0.0))
+            row["srs_streak"] = _normalize_int(row.get("srs_streak", 0), 0)
+
             last_seen = row.get("srs_last_seen") or ""
             due = row.get("srs_due") or ""
             row["srs_last_seen"] = str(last_seen) if last_seen else ""
@@ -95,50 +154,62 @@ def save_to_vocab(
             writer.writerow(row)
 
 
-def load_vocab(filename):
-    vocab = []
-    own_lang = None
-    foreign_lang = None
-    latin_lang = None
-    latin_active = False
+def load_vocab(filename: str):
+    """
+    Loads vocab from CSV.
 
-    with open(filename, "r", encoding="utf-8") as f:
-        lines = []
-        for line in f:
-            if line.startswith("# own_language="):
-                own_lang = line.strip().split("=", 1)[1]
-            elif line.startswith("# foreign_language="):
-                foreign_lang = line.strip().split("=", 1)[1]
-            elif line.startswith("# latin_language="):
-                latin_lang = line.strip().split("=", 1)[1]
-            elif line.startswith("# latin_active="):
-                latin_active = line.strip().split("=", 1)[1].lower() == "true"
-            else:
-                lines.append(line)
+    Returns:
+        (vocab_list, own_lang, foreign_lang, latin_lang, latin_active)
 
-        reader = csv.DictReader(lines)
-        for row in reader:
-            if "latin_language" not in row:
-                row["latin_language"] = ""
-            if "info" not in row:
-                row["info"] = ""
+    Compatible with:
+    - normal CSV header line
+    - whole-line-quoted CSV header line ("a,b,c")
+    - whole-line-quoted data lines ("x,y,z")
+    """
+    vocab: List[Dict] = []
+    csv_lines, meta = _read_file_lines_without_meta(filename)
 
-            # NEU: Failsafe für knowledge_level
-            if "knowledge_level" in row:
-                row["knowledge_level"] = _normalize_knowledge_level(
-                    row.get("knowledge_level")
-                )
-            else:
-                # alte CSVs ohne Spalte -> 0.0
-                row["knowledge_level"] = 0.0
+    own_lang = meta.get("own_language")
+    foreign_lang = meta.get("foreign_language")
+    latin_lang = meta.get("latin_language")
+    latin_active = (meta.get("latin_active", "false").strip().lower() == "true")
 
-            vocab.append(row)
+    # preprocess lines for the whole-line-quoted format
+    cleaned_lines: List[str] = []
+    for raw in csv_lines:
+        fixed = _strip_outer_quotes_if_whole_line(raw)
+        cleaned_lines.append(fixed + ("\n" if not fixed.endswith("\n") else ""))
+
+    # Use DictReader
+    reader = csv.DictReader(cleaned_lines)
+    # If the header was "one field containing commas", DictReader will think there is 1 field.
+    # But our preprocessing above should have converted it back to normal "a,b,c" -> OK.
+
+    for row in reader:
+        if not row:
+            continue
+
+        # Ensure all known fields exist
+        if "latin_language" not in row:
+            row["latin_language"] = ""
+        if "info" not in row:
+            row["info"] = ""
+
+        # Normalize types
+        row["knowledge_level"] = _normalize_knowledge_level(row.get("knowledge_level"))
+        row["srs_streak"] = _normalize_int(row.get("srs_streak", 0), 0)
+
+        # keep srs strings as-is (isoformat or empty)
+        row["srs_last_seen"] = (row.get("srs_last_seen") or "").strip()
+        row["srs_due"] = (row.get("srs_due") or "").strip()
+
+        vocab.append(row)
 
     return vocab, own_lang, foreign_lang, latin_lang, latin_active
 
 
-def read_languages(filename):
-    """Nur die Sprach-Metadaten lesen"""
+def read_languages(filename: str) -> Tuple[Optional[str], Optional[str], Optional[str], bool]:
+    """Reads only meta language settings."""
     own_lang = None
     foreign_lang = None
     latin_lang = None
@@ -154,15 +225,18 @@ def read_languages(filename):
                 latin_lang = line.strip().split("=", 1)[1]
             elif line.startswith("# latin_active="):
                 latin_active = line.strip().split("=", 1)[1].lower() == "true"
-            if own_lang and foreign_lang and latin_lang:
-                # trotzdem nicht abbrechen -> latin_active evtl. weiter unten
-                continue
 
     return own_lang, foreign_lang, latin_lang, latin_active
 
 
-def change_languages(filename, new_own, new_foreign, new_latin, latin_active=False):
-    """Sprach-Metadaten überschreiben, Vokabeln unverändert lassen"""
+def change_languages(
+    filename: str,
+    new_own: str,
+    new_foreign: str,
+    new_latin: str,
+    latin_active: bool = False,
+) -> None:
+    """Overwrites meta languages while keeping vocab entries unchanged."""
     vocab, _, _, _, _ = load_vocab(filename)
     save_to_vocab(
         vocab,
@@ -174,14 +248,23 @@ def change_languages(filename, new_own, new_foreign, new_latin, latin_active=Fal
     )
 
 
-def load_settings():
+# ------------------------------------------------------------
+# Settings YAML
+# ------------------------------------------------------------
+
+def load_settings() -> dict:
     """
-    Lädt config.yml. Wenn die Datei nicht existiert oder leer/kaputt ist,
-    wird sie mit sinnvollen Standardwerten neu angelegt und zurückgegeben.
+    Loads config.yml with sane defaults. Keeps your existing keys:
+      settings.daily_target_cards
+      settings.gui.(title_font_size, text_font_size, padding_multiplicator)
+      settings.session_size
+      settings.theme.(preset, base_preset, custom_colors)
+      settings.modes.*
+      stats.(daily_progress_date, daily_cards_done, total_learn_time_seconds)
     """
-    # Default-Konfiguration, die zu deinem Code oben passt
     default_config = {
         "settings": {
+            "daily_target_cards": 300,
             "gui": {
                 "title_font_size": 32,
                 "text_font_size": 18,
@@ -210,26 +293,25 @@ def load_settings():
         },
     }
 
-    # 1) Wenn die Datei gar nicht existiert: mit Defaults anlegen
     if not os.path.exists("config.yml"):
-        with open("config.yml", "w", encoding="utf-8") as file:
-            yaml.dump(default_config, file, allow_unicode=True)
+        with open("config.yml", "w", encoding="utf-8") as f:
+            yaml.safe_dump(default_config, f, allow_unicode=True, sort_keys=False)
         return default_config
 
-    # 2) Versuchen zu laden – bei Fehlern auf leere Config zurückfallen
     try:
-        with open("config.yml", "r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
+        with open("config.yml", "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
     except Exception:
         data = {}
 
     if not isinstance(data, dict):
         data = {}
 
-    # 3) Defaults in bestehende Config "hineinmergen"
-    config = data
+    cfg = data
 
-    settings = config.setdefault("settings", {})
+    settings = cfg.setdefault("settings", {})
+    settings.setdefault("daily_target_cards", default_config["settings"]["daily_target_cards"])
+
     gui = settings.setdefault("gui", {})
     gui.setdefault("title_font_size", default_config["settings"]["gui"]["title_font_size"])
     gui.setdefault("text_font_size", default_config["settings"]["gui"]["text_font_size"])
@@ -240,89 +322,36 @@ def load_settings():
     theme = settings.setdefault("theme", {})
     theme.setdefault("preset", default_config["settings"]["theme"]["preset"])
     theme.setdefault("base_preset", default_config["settings"]["theme"]["base_preset"])
-    theme.setdefault("custom_colors", default_config["settings"]["theme"]["custom_colors"].copy())
+    theme.setdefault("custom_colors", dict(default_config["settings"]["theme"]["custom_colors"]))
 
     modes = settings.setdefault("modes", {})
-    for key, val in default_config["settings"]["modes"].items():
-        modes.setdefault(key, val)
+    for k, v in default_config["settings"]["modes"].items():
+        modes.setdefault(k, v)
 
-    stats = config.setdefault("stats", {})
-    for key, val in default_config["stats"].items():
-        stats.setdefault(key, val)
+    stats = cfg.setdefault("stats", {})
+    for k, v in default_config["stats"].items():
+        stats.setdefault(k, v)
 
-    # 4) Vervollständigte Config wieder speichern (falls neue Defaults dazugekommen sind)
-    with open("config.yml", "w", encoding="utf-8") as file:
-        yaml.dump(config, file, allow_unicode=True)
-
-    return config
+    save_settings(cfg)
+    return cfg
 
 
-
-def save_settings(config):
-    # Save Settings
-    with open("config.yml", "w") as file:
-        yaml.dump(config, file)
+def save_settings(config: dict) -> None:
+    with open("config.yml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
 
+# ------------------------------------------------------------
+# Persistence helpers (same API as before)
+# ------------------------------------------------------------
 
-def persist_single_entry(vocab, stack_vocab_lists, stack_meta_map, entry_to_stack_file):
-    """
-    Speichert genau den Stack, zu dem der gegebene Vokabel-Eintrag gehört.
-
-    - vocab: das Dict der aktuellen Vokabel
-    - stack_vocab_lists: dict[filename] -> Liste von Vokabel-Einträgen
-    - stack_meta_map: dict[filename] -> (own_lang, foreign_lang, latin_lang, latin_active)
-    - entry_to_stack_file: dict[id(entry)] -> filename
-    """
-    if vocab is None:
-        return
-
-    filename = entry_to_stack_file.get(id(vocab))
-    if not filename:
-        return
-
-    vocab_list = stack_vocab_lists.get(filename)
-    if vocab_list is None:
-        return
-
-    # evtl. alte Helper-Felder entfernen
-    for entry in vocab_list:
-        if isinstance(entry, dict):
-            entry.pop("_stack_file", None)
-
-    meta = stack_meta_map.get(filename)
-    if meta is None:
-        own_lang, foreign_lang, latin_lang, latin_active = read_languages(filename)
-    else:
-        own_lang, foreign_lang, latin_lang, latin_active = meta
-
-    save_to_vocab(
-        vocab_list,
-        filename,
-        own_lang=own_lang or "Deutsch",
-        foreign_lang=foreign_lang or "Englisch",
-        latin_lang=latin_lang or "Latein",
-        latin_active=latin_active,
-    )
-
-
-def persist_all_stacks(stack_vocab_lists, stack_meta_map):
-    """
-    Speichert alle übergebenen Stacks zurück auf die Festplatte.
-
-    - stack_vocab_lists: dict[filename] -> Liste von Vokabel-Einträgen
-    - stack_meta_map: dict[filename] -> (own_lang, foreign_lang, latin_lang, latin_active)
-    """
+def persist_all_stacks(stack_vocab_lists: dict, stack_meta_map: dict) -> None:
     if not stack_vocab_lists:
         return
 
     for filename, vocab_list in stack_vocab_lists.items():
         if vocab_list is None:
             continue
-
-        for entry in vocab_list:
-            if isinstance(entry, dict):
-                entry.pop("_stack_file", None)
 
         meta = stack_meta_map.get(filename)
         if meta is None:
@@ -336,6 +365,38 @@ def persist_all_stacks(stack_vocab_lists, stack_meta_map):
             own_lang=own_lang or "Deutsch",
             foreign_lang=foreign_lang or "Englisch",
             latin_lang=latin_lang or "Latein",
-            latin_active=latin_active,
+            latin_active=bool(latin_active),
         )
 
+
+def persist_single_entry(vocab: dict, stack_vocab_lists: dict, stack_meta_map: dict, entry_to_stack_file: dict) -> None:
+    """
+    Persist exactly one vocab entry by saving only its owning stack file.
+
+    This is used for immediate autosave during learning updates.
+    """
+    if vocab is None:
+        return
+
+    filename = entry_to_stack_file.get(id(vocab))
+    if not filename:
+        return
+
+    vocab_list = stack_vocab_lists.get(filename)
+    if vocab_list is None:
+        return
+
+    meta = stack_meta_map.get(filename)
+    if meta is None:
+        own_lang, foreign_lang, latin_lang, latin_active = read_languages(filename)
+    else:
+        own_lang, foreign_lang, latin_lang, latin_active = meta
+
+    save_to_vocab(
+        vocab_list,
+        filename,
+        own_lang=own_lang or "Deutsch",
+        foreign_lang=foreign_lang or "Englisch",
+        latin_lang=latin_lang or "Latein",
+        latin_active=bool(latin_active),
+    )
