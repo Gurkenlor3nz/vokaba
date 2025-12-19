@@ -2,7 +2,10 @@ from kivy.app import App
 from kivy.config import Config
 from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.textinput import TextInput
 from kivy.utils import platform
+
+import unicodedata
 
 import save
 
@@ -55,6 +58,7 @@ class VokabaApp(
             log(f"Could not set window size: {e}")
 
         self.current_focus_input = None
+        self._install_dead_key_composer()
         self.window = FloatLayout()
 
         # App-level state used by learning autosave
@@ -72,3 +76,78 @@ class VokabaApp(
         self.config_data.clear()
         self.config_data.update(new_cfg)
         self.colors = apply_theme_from_config(self.config_data)
+
+    # ------------------------------------------------------------
+    # Physical keyboard "dead key" composer (Android tablets etc.)
+    # ------------------------------------------------------------
+    def _install_dead_key_composer(self):
+        # Some Kivy/Android combinations don't compose dead keys (´ + e => ´e).
+        # We emulate a small subset of composition so users can type é/à/ü/etc.
+        self._pending_dead_key = None
+        try:
+            Window.bind(on_textinput=self._on_window_textinput_deadkeys)
+            Window.bind(on_key_down=self._on_window_key_down_deadkeys)
+        except Exception as e:
+            log(f"dead-key composer bind failed: {e}")
+
+    def _on_window_key_down_deadkeys(self, _window, key, _scancode, _codepoint, _modifiers):
+        # Clear pending dead key on "non text" actions.
+        if getattr(self, "_pending_dead_key", None) and key in (8, 13, 27):  # backspace / enter / esc
+            self._pending_dead_key = None
+        return False
+
+    def _on_window_textinput_deadkeys(self, _window, text):
+        # Kivy passes "text" for actual text input. We intercept only when a
+        # TextInput is focused and a dead key was pressed previously.
+        ti = getattr(self, "current_focus_input", None)
+        if not isinstance(ti, TextInput):
+            return False
+
+        dead_to_combining = {
+            "´": "\u0301",  # acute
+            "`": "\u0300",  # grave
+            "^": "\u0302",  # circumflex
+            "¨": "\u0308",  # diaeresis/umlaut
+            "~": "\u0303",  # tilde
+            "¸": "\u0327",  # cedilla
+        }
+
+        pending = getattr(self, "_pending_dead_key", None)
+
+        if pending:
+            # Pressing the same dead key twice should yield the literal character.
+            if text == pending:
+                ti.insert_text(pending)
+                self._pending_dead_key = None
+                return True
+
+            # If user presses another dead key, output previous and keep new pending.
+            if text in dead_to_combining:
+                ti.insert_text(pending)
+                self._pending_dead_key = text
+                return True
+
+            # Space after dead key should output the literal accent.
+            if text == " ":
+                ti.insert_text(pending)
+                self._pending_dead_key = None
+                return True
+
+            comb = dead_to_combining.get(pending)
+            self._pending_dead_key = None
+
+            if comb and len(text) == 1:
+                composed = unicodedata.normalize("NFC", text + comb)
+                ti.insert_text(composed)
+            else:
+                ti.insert_text(pending + text)
+
+            return True
+
+        # No pending: if this key is a dead accent, start pending.
+        if text in dead_to_combining:
+            self._pending_dead_key = text
+            return True
+
+        return False
+

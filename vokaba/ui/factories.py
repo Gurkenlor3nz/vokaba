@@ -1,5 +1,6 @@
 import os
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
+from kivy.core.window import Window
 from kivy.clock import Clock
 from kivy.uix.label import Label
 from kivy.uix.button import Button
@@ -41,10 +42,12 @@ class UIFactoryMixin:
             return float(default)
 
     def make_title_label(self, text, **kwargs):
+        # Kivy expects px internally; use sp() so text scales correctly on high/low DPI devices.
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "title_font_size"], 32)))
         lbl = Label(
             text=text,
             color=self.colors["text"],
-            font_size=int(self.cfg_int(["settings", "gui", "title_font_size"], 32)),
+            font_size=font_size,
             **kwargs,
         )
         lbl.halign = kwargs.get("halign", "center")
@@ -53,10 +56,11 @@ class UIFactoryMixin:
         return lbl
 
     def make_text_label(self, text, **kwargs):
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         lbl = Label(
             text=text,
             color=self.colors["muted"],
-            font_size=int(self.cfg_int(["settings", "gui", "text_font_size"], 18)),
+            font_size=font_size,
             **kwargs,
         )
         lbl.halign = kwargs.get("halign", "left")
@@ -65,7 +69,7 @@ class UIFactoryMixin:
         return lbl
 
     def make_primary_button(self, text, **kwargs):
-        font_size = kwargs.pop("font_size", int(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         return RoundedButton(
             text=text,
             bg_color=self.colors["primary"],
@@ -75,7 +79,7 @@ class UIFactoryMixin:
         )
 
     def make_secondary_button(self, text, **kwargs):
-        font_size = kwargs.pop("font_size", int(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         return RoundedButton(
             text=text,
             bg_color=self.colors["card"],
@@ -85,7 +89,7 @@ class UIFactoryMixin:
         )
 
     def make_danger_button(self, text, **kwargs):
-        font_size = kwargs.pop("font_size", int(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         return RoundedButton(
             text=text,
             bg_color=self.colors["danger"],
@@ -95,7 +99,7 @@ class UIFactoryMixin:
         )
 
     def make_list_button(self, text, **kwargs):
-        font_size = kwargs.pop("font_size", int(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         btn = RoundedButton(
             text=text,
             bg_color=self.colors["card_selected"],
@@ -112,6 +116,7 @@ class UIFactoryMixin:
 
         def _update_text_size(inst, size):
             inst.text_size = (size[0] - dp(32), None)
+
         btn.bind(size=_update_text_size)
         return btn
 
@@ -134,21 +139,33 @@ class UIFactoryMixin:
         ti.background_color = self.colors.get("card_selected", self.colors["card"])
         ti.foreground_color = self.colors["text"]
         ti.cursor_color = self.colors["accent"]
-        ti.padding = [dp(8), dp(8), dp(8), dp(8)]
-        ti.font_size = int(self.cfg_int(["settings", "gui", "text_font_size"], 18))
+        ti.padding = [dp(10), dp(10), dp(10), dp(10)]
+        ti.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
 
         def _on_focus(instance, value):
             if value:
                 self.current_focus_input = instance
+            else:
+                if getattr(self, "current_focus_input", None) is instance:
+                    self.current_focus_input = None
+
         ti.bind(focus=_on_focus)
         return ti
 
     def get_textinput_height(self) -> float:
-        base = int(self.cfg_int(["settings", "gui", "text_font_size"], 18))
-        return dp(base * 2.0)
+        # ~1 line + padding. Uses sp() so the height stays usable across DPI classes.
+        fs = float(sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        return max(dp(48), fs * 1.55 + dp(22))
+
+    def is_portrait(self) -> bool:
+        try:
+            w, h = Window.size
+        except Exception:
+            return False
+        return h > w
 
     def create_accent_bar(self):
-        accents = ["é","è","ê","ë","à","â","î","ï","ô","ù","û","ç","œ","æ"]
+        accents = ["é", "è", "ê", "ë", "à", "â", "î", "ï", "ô", "ù", "û", "ç", "œ", "æ"]
         bar = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(4))
 
         for ch in accents:
@@ -163,7 +180,9 @@ class UIFactoryMixin:
                         def _refocus(_dt):
                             ti.focus = True
                             self.current_focus_input = ti
+
                         Clock.schedule_once(_refocus, 0)
+
                 return _insert
 
             btn.bind(on_press=make_handler(ch))

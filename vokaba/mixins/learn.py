@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 from kivy.animation import Animation
 from kivy.clock import Clock
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
+from kivy.core.window import Window
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -57,7 +58,7 @@ class LearnMixin:
         self.header_anchor = AnchorLayout(
             anchor_x="center",
             anchor_y="top",
-            size_hint=(1, 0.22),
+            size_hint=(1, 0.18 if Window.height > Window.width else 0.22),
             pos_hint={"x": 0, "top": 1},
             padding=30 * pad_mul,
         )
@@ -69,7 +70,7 @@ class LearnMixin:
         )
         self.header_label = Label(
             text="",
-            font_size=int(self.config_data["settings"]["gui"]["title_font_size"]),
+            font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
             size_hint=(1, None),
             height=dp(40),
             color=self.colors["text"],
@@ -159,6 +160,14 @@ class LearnMixin:
                 self.all_vocab_list.append(entry)
 
         random.shuffle(self.all_vocab_list)
+
+        # Limit the *pool* of cards for today to the daily goal, unless the goal is >= 500.
+        # (>=500 means: just include all vocab, even if there are more than 500.)
+        daily_goal = int((self.config_data.get("settings", {}) or {}).get("daily_target_cards", 300) or 300)
+        if daily_goal < 500:
+            pool_size = max(1, min(len(self.all_vocab_list), daily_goal))
+            self.all_vocab_list = self.all_vocab_list[:pool_size]
+
         self.max_current_vocab_index = len(self.all_vocab_list)
 
         if self.max_current_vocab_index == 0:
@@ -340,7 +349,7 @@ class LearnMixin:
             text=text,
             bg_color=self.colors["card"],
             color=self.colors["text"],
-            font_size=int(self.config_data["settings"]["gui"]["title_font_size"]),
+            font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
             size_hint=(1, 0.8),
         )
         self.front_side_label.bind(on_press=callback)
@@ -686,12 +695,22 @@ class LearnMixin:
         new = max(0.0, min(1.0, cur + d))
         vocab["knowledge_level"] = new
 
+        # Daily goal counting: a card counts as "done" once its knowledge increased by >= 0.3.
+        # We use an anchor per vocab so small increments can accumulate across interactions.
+        try:
+            anchor = float(vocab.get("daily_goal_anchor", cur) or cur)
+        except Exception:
+            anchor = cur
+
+        # If knowledge dropped (wrong answer), don't keep the anchor above the current level.
+        anchor = min(anchor, cur)
+
+        if new > anchor and (new - anchor) >= 0.3:
+            vocab["daily_goal_anchor"] = new
+            self._update_daily_progress(1)
+
         if persist_immediately:
             self._persist_single_entry(vocab)
-
-        # daily goal counting: +1 when crossing learned-threshold
-        if cur < 0.7 <= new:
-            self._update_daily_progress(1)
 
     def update_srs(self, vocab: dict, was_correct: bool, quality: float = 0.5):
         if not vocab:
@@ -801,7 +820,7 @@ class LearnMixin:
                 text=self._format_answer_lines(opt),
                 bg_color=self.colors["card"],
                 color=self.colors["text"],
-                font_size=int(self.config_data["settings"]["gui"]["title_font_size"]),
+                font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
                 size_hint=(1, None),
                 height=dp(70),
             )
@@ -896,7 +915,7 @@ class LearnMixin:
                 color=self.colors["text"],
                 size_hint=(1, None),
                 height=dp(48),
-                font_size=int(self.config_data["settings"]["gui"]["text_font_size"]),
+                font_size=sp(int(self.config_data["settings"]["gui"]["text_font_size"])),
             )
             btn._matched = False
             btn.bind(on_press=lambda inst, e=entry: self.on_connect_left_pressed(inst, e))
@@ -912,7 +931,7 @@ class LearnMixin:
                 color=self.colors["text"],
                 size_hint=(1, None),
                 height=dp(48),
-                font_size=int(self.config_data["settings"]["gui"]["text_font_size"]),
+                font_size=sp(int(self.config_data["settings"]["gui"]["text_font_size"])),
             )
             btn._matched = False
             btn.bind(on_press=lambda inst, e=entry: self.on_connect_right_pressed(inst, e))
@@ -1087,7 +1106,7 @@ class LearnMixin:
                 text=ch,
                 bg_color=self.colors["card"],
                 color=self.colors["text"],
-                font_size=int(self.config_data["settings"]["gui"]["title_font_size"]),
+                font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
                 size_hint=(None, None),
                 size=(dp(56), dp(56)),
             )
@@ -1228,7 +1247,7 @@ class LearnMixin:
         card.add_widget(self.make_title_label(vocab.get("own_language", ""), size_hint_y=None, height=dp(40)))
         card.add_widget(self.make_text_label(getattr(labels, "typing_mode_instruction", "Gib die passende Übersetzung ein:"), size_hint_y=None, height=dp(30)))
 
-        self.typing_input = self.style_textinput(TextInput(multiline=False, size_hint=(1, None), height=dp(48)))
+        self.typing_input = self.style_textinput(TextInput(multiline=False, size_hint=(1, None), height=self.get_textinput_height()))
         self.typing_input.bind(on_text_validate=self.typing_check_answer)
         card.add_widget(self.typing_input)
         card.add_widget(self.create_accent_bar())
@@ -1248,7 +1267,7 @@ class LearnMixin:
                 btn = self.make_secondary_button(
                     getattr(labels, label_name, quality),
                     size_hint=(0.25, 1),
-                    font_size=int(self.config_data["settings"]["gui"]["text_font_size"]),
+                    font_size=sp(int(self.config_data["settings"]["gui"]["text_font_size"])),
                 )
                 btn.bind(on_press=lambda _i, q=quality: self.self_rate_card(q))
                 self.typing_selfrating_box.add_widget(btn)
@@ -1429,7 +1448,7 @@ class LearnMixin:
                     text=chunk,
                     bg_color=self.colors["card"],
                     color=self.colors["text"],
-                    font_size=int(self.config_data["settings"]["gui"]["title_font_size"]),
+                    font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
                     size_hint=(None, None),
                     size=(dp(80), dp(56)),
                 )
