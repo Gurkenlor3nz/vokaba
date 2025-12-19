@@ -72,8 +72,8 @@ class SettingsMixin:
 
         for s in settings_definitions:
             row = RoundedCard(orientation="vertical", size_hint_y=None, height=dp(110), padding=dp(8), spacing=dp(4), bg_color=self.colors["card"])
-            lbl = self.make_text_label(s["label"], size_hint_y=None, height=dp(40))
-            slider = NoScrollSlider(min=s["min"], max=s["max"], value=s["value"], size_hint_y=None, height=dp(40))
+            lbl = self.make_text_label(s["label"], size_hint_y=None, height=self.get_textinput_height())
+            slider = NoScrollSlider(min=s["min"], max=s["max"], value=s["value"], size_hint_y=None, height=self.get_textinput_height())
             slider.bind(value=self._on_setting_changed(s["path"], s["cast"]))
             row.add_widget(lbl)
             row.add_widget(slider)

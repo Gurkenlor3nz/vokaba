@@ -1,6 +1,6 @@
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -74,7 +74,7 @@ class AddVocabMixin:
         form.add_widget(self.create_accent_bar())
 
         # Inline error
-        self.add_vocab_error_label = Label(text="", color=self.colors["danger"], font_size=int(self.config_data["settings"]["gui"]["text_font_size"]), size_hint_y=None, height=dp(26))
+        self.add_vocab_error_label = Label(text="", color=self.colors["danger"], font_size=sp(int(self.config_data["settings"]["gui"]["text_font_size"])), size_hint_y=None, height=dp(26))
         self.add_vocab_error_label.bind(size=lambda inst, val: setattr(inst, "text_size", val))
         form.add_widget(self.add_vocab_error_label)
 
