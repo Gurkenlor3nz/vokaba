@@ -1,6 +1,7 @@
 import csv
 import os
 import yaml
+import unicodedata
 from typing import Dict, List, Tuple, Optional
 
 
@@ -91,6 +92,75 @@ def _read_file_lines_without_meta(filename: str) -> Tuple[List[str], Dict[str, s
 
 
 # ------------------------------------------------------------
+# Unicode normalization (fix dead keys / combining marks)
+# ------------------------------------------------------------
+
+def _fix_leading_combining_marks(s: str) -> str:
+    """
+    Some external keyboards (dead keys) may emit combining marks BEFORE the base letter,
+    e.g. '\\u0300e' instead of 'e\\u0300'. Many renderers show the combining mark as a
+    "broken box" followed by the letter.
+
+    This function reorders such sequences so NFC can compose them (-> 'è').
+    """
+    if not s:
+        return s
+
+    out: List[str] = []
+    pending: List[str] = []
+
+    for ch in s:
+        # If string starts with combining marks, keep them pending until first base char
+        if unicodedata.combining(ch) and not out:
+            pending.append(ch)
+            continue
+
+        if not unicodedata.combining(ch):
+            out.append(ch)
+            if pending:
+                out.extend(pending)
+                pending.clear()
+        else:
+            out.append(ch)
+
+    # If it ends with pending combining marks, just append (can't attach to a base char)
+    if pending:
+        out.extend(pending)
+
+    return "".join(out)
+
+
+def normalize_user_text(value) -> str:
+    """
+    Returns a safe, display-friendly string:
+      - None -> ""
+      - repairs dead-key ordering of combining marks
+      - normalizes to NFC (composed form), so 'e' + combining_grave -> 'è'
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    if not s:
+        return ""
+    s = _fix_leading_combining_marks(s)
+    return unicodedata.normalize("NFC", s)
+
+
+def _normalize_row_text_fields(row: Dict) -> Dict:
+    """
+    Apply normalize_user_text to known text columns only (not numbers/dates).
+    """
+    if not isinstance(row, dict):
+        return row
+
+    for k in ("own_language", "foreign_language", "latin_language", "info"):
+        if k in row:
+            row[k] = normalize_user_text(row.get(k))
+
+    return row
+
+
+# ------------------------------------------------------------
 # Vocab CSV
 # ------------------------------------------------------------
 
@@ -139,6 +209,9 @@ def save_to_vocab(
                 continue
 
             row = dict(row)  # avoid mutating caller data
+
+            # Normalize text fields (fix dead keys / combining marks)
+            row = _normalize_row_text_fields(row)
 
             row.setdefault("latin_language", "")
             row.setdefault("info", "")
@@ -195,6 +268,9 @@ def load_vocab(filename: str):
         if "info" not in row:
             row["info"] = ""
 
+        # Normalize text fields (fix dead keys / combining marks)
+        row = _normalize_row_text_fields(row)
+
         # Normalize types
         row["knowledge_level"] = _normalize_knowledge_level(row.get("knowledge_level"))
         row["srs_streak"] = _normalize_int(row.get("srs_streak", 0), 0)
@@ -218,11 +294,11 @@ def read_languages(filename: str) -> Tuple[Optional[str], Optional[str], Optiona
     with open(filename, "r", encoding="utf-8") as f:
         for line in f:
             if line.startswith("# own_language="):
-                own_lang = line.strip().split("=", 1)[1]
+                own_lang = normalize_user_text(line.strip().split("=", 1)[1])
             elif line.startswith("# foreign_language="):
-                foreign_lang = line.strip().split("=", 1)[1]
+                foreign_lang = normalize_user_text(line.strip().split("=", 1)[1])
             elif line.startswith("# latin_language="):
-                latin_lang = line.strip().split("=", 1)[1]
+                latin_lang = normalize_user_text(line.strip().split("=", 1)[1])
             elif line.startswith("# latin_active="):
                 latin_active = line.strip().split("=", 1)[1].lower() == "true"
 

@@ -1,5 +1,6 @@
 import os
 
+from kivy.clock import Clock
 from kivy.config import Config
 from kivy.core.window import Window
 from kivy.metrics import dp, sp
@@ -67,7 +68,11 @@ class MainMenuMixin:
 
         if len(file_list.children) == 0:
             placeholder = self.make_text_label(
-                getattr(labels, "main_menu_no_stacks_hint", "Noch keine Stapel.\nErstelle deinen ersten mit dem + unten rechts."),
+                getattr(
+                    labels,
+                    "main_menu_no_stacks_hint",
+                    "Noch keine Stapel.\nErstelle deinen ersten mit dem + unten rechts.",
+                ),
                 halign="center",
                 size_hint_y=None,
                 height=dp(120),
@@ -97,7 +102,12 @@ class MainMenuMixin:
             self.window.add_widget(scroll)
 
             # Header row: logo + settings
-            header_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(72) * pad_mul, spacing=dp(12) * pad_mul)
+            header_row = BoxLayout(
+                orientation="horizontal",
+                size_hint_y=None,
+                height=dp(72) * pad_mul,
+                spacing=dp(12) * pad_mul,
+            )
             vokaba_logo = self.make_icon_button("assets/vokaba_logo.png", on_press=self.about, size=dp(72) * pad_mul)
             settings_button = self.make_icon_button("assets/settings_icon.png", on_press=self.settings, size=dp(56) * pad_mul)
             header_row.add_widget(vokaba_logo)
@@ -106,24 +116,51 @@ class MainMenuMixin:
             content.add_widget(header_row)
 
             # Title
-            title = self.make_title_label(getattr(labels, "welcome_text", "Vokaba"), halign="center", size_hint_y=None, height=dp(42) * pad_mul)
+            title = self.make_title_label(
+                getattr(labels, "welcome_text", "Vokaba"),
+                halign="center",
+                size_hint_y=None,
+                height=dp(42) * pad_mul,
+            )
             content.add_widget(title)
 
             # Daily progress card
-            daily_card = RoundedCard(orientation="vertical", size_hint=(1, None), padding=dp(16), spacing=dp(8), bg_color=colors["card"])
+            daily_card = RoundedCard(
+                orientation="vertical",
+                size_hint=(1, None),
+                padding=dp(16),
+                spacing=dp(8),
+                bg_color=colors["card"],
+            )
             daily_box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(52), spacing=dp(6))
             self.daily_label_main_menu = self.make_text_label("", halign="center", size_hint_y=None, height=dp(22))
             self.daily_label_main_menu.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
-            self.daily_bar_main_menu = ProgressBar(max=daily_target, value=min(daily_done, daily_target), size_hint=(1, None), height=dp(10))
+            self.daily_bar_main_menu = ProgressBar(
+                max=daily_target,
+                value=min(daily_done, daily_target),
+                size_hint=(1, None),
+                height=dp(10),
+            )
             daily_box.add_widget(self.daily_label_main_menu)
             daily_box.add_widget(self.daily_bar_main_menu)
             daily_card.add_widget(daily_box)
             daily_card.height = daily_box.height + dp(32)
             content.add_widget(daily_card)
 
-            # Stats card (better ordered + bigger)
-            stats_card = RoundedCard(orientation="vertical", size_hint=(1, None), padding=dp(16), spacing=dp(10), bg_color=colors["card"])
-            stats_title = self.make_title_label(getattr(labels, "main_stats_title", "Statistik"), halign="left", size_hint_y=None, height=dp(34))
+            # Stats card
+            stats_card = RoundedCard(
+                orientation="vertical",
+                size_hint=(1, None),
+                padding=dp(16),
+                spacing=dp(10),
+                bg_color=colors["card"],
+            )
+            stats_title = self.make_title_label(
+                getattr(labels, "main_stats_title", "Statistik"),
+                halign="left",
+                size_hint_y=None,
+                height=dp(34),
+            )
             stats_card.add_widget(stats_title)
 
             line1 = self.make_text_label(
@@ -154,15 +191,33 @@ class MainMenuMixin:
             dash_btn.bind(on_press=self.open_dashboard)
             stats_card.add_widget(dash_btn)
 
-            stats_card.height = dp(16) * 2 + stats_title.height + line1.height + line2.height + line3.height + dash_btn.height + dp(10) * 4
+            stats_card.height = (
+                dp(16) * 2
+                + stats_title.height
+                + line1.height
+                + line2.height
+                + line3.height
+                + dash_btn.height
+                + dp(10) * 4
+            )
             content.add_widget(stats_card)
 
             # Stack list card
-            stacks_card = RoundedCard(orientation="vertical", size_hint=(1, None), padding=dp(12), spacing=dp(8), bg_color=colors["card"])
-            stacks_title = self.make_title_label(getattr(labels, "main_menu_stacks_title", "Stapel"), halign="left", size_hint_y=None, height=dp(34))
+            stacks_card = RoundedCard(
+                orientation="vertical",
+                size_hint=(1, None),
+                padding=dp(12),
+                spacing=dp(8),
+                bg_color=colors["card"],
+            )
+            stacks_title = self.make_title_label(
+                getattr(labels, "main_menu_stacks_title", "Stapel"),
+                halign="left",
+                size_hint_y=None,
+                height=dp(34),
+            )
             stacks_card.add_widget(stacks_title)
 
-            # Take a good chunk of the screen in portrait
             list_h = max(dp(240), min(dp(560), Window.height * 0.45))
             stack_scroll.size_hint = (1, None)
             stack_scroll.height = list_h
@@ -188,8 +243,7 @@ class MainMenuMixin:
             return
 
         # ------------------------------------------------------------
-        # Landscape: keep the original "dashboard-like" layout, but
-        # improve stats ordering + vertical centering.
+        # Landscape
         # ------------------------------------------------------------
 
         # Top-left: logo => about
@@ -226,52 +280,129 @@ class MainMenuMixin:
         top_center.add_widget(top_center_box)
         self.window.add_widget(top_center)
 
-        # Left side: stats card (centered vertically, more space)
-        left_anchor = AnchorLayout(anchor_x="left", anchor_y="center", padding=[40 * pad_mul, 0, 0, 0])
-        left_box = BoxLayout(orientation="vertical", size_hint=(0.38, None), height=dp(300), spacing=dp(16))
+        # ------------------------------------------------------------
+        # Landscape middle area: stats + stack list side-by-side
+        # (prevents overlap + right side height like old layout)
+        # ------------------------------------------------------------
+        pad_top = dp(150) * pad_mul
+        pad_bottom = dp(110) * pad_mul
 
-        stats_card = RoundedCard(orientation="vertical", size_hint=(1, None), padding=dp(16), spacing=dp(12), bg_color=colors["card"])
-        stats_card.bind(minimum_height=stats_card.setter("height"))
+        middle_anchor = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=[dp(40) * pad_mul, pad_top, dp(40) * pad_mul, pad_bottom],
+        )
 
-        stats_title = self.make_title_label(getattr(labels, "main_stats_title", "Statistik"), halign="left", size_hint_y=None, height=dp(34))
+        middle_row = BoxLayout(
+            orientation="horizontal",
+            size_hint=(1, None),  # full width, but fixed height (we set height dynamically)
+            spacing=dp(24) * pad_mul,
+        )
+        middle_row.height = dp(520)  # safe initial value (will be recomputed)
+
+        def _update_middle_row_height(*_args):
+            # AnchorLayout uses padding=[l, t, r, b]
+            pad = middle_anchor.padding
+            top = pad[1] if isinstance(pad, (list, tuple)) and len(pad) >= 2 else pad_top
+            bottom = pad[3] if isinstance(pad, (list, tuple)) and len(pad) >= 4 else pad_bottom
+
+            avail_h = max(0, middle_anchor.height - top - bottom)
+
+            # mimic old card height (~0.75 of available height)
+            target_h = avail_h * 0.75
+
+            # clamps
+            target_h = max(dp(320), min(target_h, dp(820)))
+
+            middle_row.height = target_h
+
+        middle_anchor.bind(size=_update_middle_row_height)
+
+        # ----- LEFT COLUMN (stats) -----
+        left_col = BoxLayout(orientation="vertical", size_hint=(0.38, 1))
+        left_col.add_widget(Widget(size_hint_y=1))  # spacer top
+
+        stats_card = RoundedCard(
+            orientation="vertical",
+            size_hint=(1, None),
+            padding=dp(16),
+            spacing=dp(12),
+            bg_color=colors["card"],
+        )
+
+        stats_title = self.make_title_label(
+            getattr(labels, "main_stats_title", "Statistik"),
+            halign="left",
+            size_hint_y=None,
+            height=dp(34),
+        )
         stats_card.add_widget(stats_title)
 
         s1 = self.make_text_label(
             f"Stapel: {overall.get('stacks', 0)}   •   Vokabeln: {total_vocab}   •   Paare: {overall.get('unique_pairs', 0)}",
-            size_hint_y=None, height=dp(34)
+            size_hint_y=None,
+            height=dp(34),
         )
         s1.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
         stats_card.add_widget(s1)
 
         s2 = self.make_text_label(
             f"Gelernte: {learned}/{total_vocab_safe} ({progress_percent:.0f} %)   •   Ø Wissen: {avg_percent:.0f} %",
-            size_hint_y=None, height=dp(34)
+            size_hint_y=None,
+            height=dp(34),
         )
         s2.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
         stats_card.add_widget(s2)
 
         s3 = self.make_text_label(
             f"Gesamtlernzeit: {time_str}   •   Heute: {daily_done}/{daily_target}",
-            size_hint_y=None, height=dp(34)
+            size_hint_y=None,
+            height=dp(34),
         )
         s3.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
         stats_card.add_widget(s3)
 
-        dash_btn = self.make_secondary_button(getattr(labels, "dashboard_title", "Dashboard"), size_hint_y=None, height=dp(52))
+        dash_btn = self.make_secondary_button(
+            getattr(labels, "dashboard_title", "Dashboard"),
+            size_hint_y=None,
+            height=dp(52),
+        )
         dash_btn.bind(on_press=self.open_dashboard)
         stats_card.add_widget(dash_btn)
 
-        left_box.add_widget(stats_card)
-        left_anchor.add_widget(left_box)
-        self.window.add_widget(left_anchor)
+        stats_card.height = (
+            dp(16) * 2
+            + stats_title.height
+            + s1.height
+            + s2.height
+            + s3.height
+            + dash_btn.height
+            + stats_card.spacing * 4
+        )
 
-        # Right side: stack list card
-        right_anchor = AnchorLayout(anchor_x="right", anchor_y="center", padding=[0, 200 * pad_mul, 140 * pad_mul, 60 * pad_mul])
-        card = RoundedCard(orientation="vertical", size_hint=(0.6, 0.75), padding=dp(12), spacing=dp(8), bg_color=colors["card"])
-        card.add_widget(stack_scroll)
+        left_col.add_widget(stats_card)
+        left_col.add_widget(Widget(size_hint_y=1))  # spacer bottom
 
-        right_anchor.add_widget(card)
-        self.window.add_widget(right_anchor)
+        # ----- RIGHT COLUMN (stack list) -----
+        right_card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.62, 1),
+            padding=dp(12),
+            spacing=dp(8),
+            bg_color=colors["card"],
+        )
+
+        stack_scroll.size_hint = (1, 1)
+        right_card.add_widget(stack_scroll)
+
+        middle_row.add_widget(left_col)
+        middle_row.add_widget(right_card)
+
+        middle_anchor.add_widget(middle_row)
+        self.window.add_widget(middle_anchor)
+
+        # run height calc once layout has real sizes
+        Clock.schedule_once(_update_middle_row_height, 0)
 
         # Bottom-right: add stack
         bottom_right = AnchorLayout(anchor_x="right", anchor_y="bottom", padding=30 * pad_mul)
