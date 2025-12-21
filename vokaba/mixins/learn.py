@@ -455,6 +455,9 @@ class LearnMixin:
             self._show_no_vocab_screen()
             return
 
+        # Daily goal: reset 'perfect' flag for this card/mini-game
+        self._daily_goal_perfect = True
+
         mode = self.learn_mode
 
         if mode == "front_back":
@@ -617,10 +620,19 @@ class LearnMixin:
         steps = max(1, steps)
 
         self.session_cards_done += steps
+
+        # Daily goal: only award points if the user was correct AND had no mistakes on this card/mini-game.
         if was_correct is True:
             self.session_correct += steps
+            if getattr(self, "_daily_goal_perfect", True):
+                try:
+                    self._update_daily_progress(steps)
+                except Exception:
+                    pass
         elif was_correct is False:
             self.session_wrong += steps
+            # Once a card is marked as incorrect, never award daily points for it.
+            self._daily_goal_perfect = False
 
         if self.session_cards_done >= self.session_cards_total:
             self.show_session_summary()
@@ -846,52 +858,6 @@ class LearnMixin:
         new = max(0.0, min(1.0, cur + d))
         vocab["knowledge_level"] = new
 
-        # Daily goal counting:
-        # A vocab contributes to the daily goal only when its knowledge_level increased by at least
-        # `settings.daily_goal_step` (accumulated per vocab via an anchor). This makes the daily
-        # counter meaningful even when individual deltas are small.
-        today = datetime.now().date().isoformat()
-        try:
-            stats_date = ((self.config_data or {}).get("stats", {}) or {}).get("daily_progress_date")
-            if stats_date:
-                today = str(stats_date)
-        except Exception:
-            pass
-
-        anchor_date = str(vocab.get("daily_goal_anchor_date") or "")
-        if anchor_date != today:
-            vocab["daily_goal_anchor_date"] = today
-            vocab["daily_goal_anchor"] = cur
-            anchor = cur
-        else:
-            try:
-                anchor = float(vocab.get("daily_goal_anchor", cur) or cur)
-            except Exception:
-                anchor = cur
-            if "daily_goal_anchor" not in vocab:
-                vocab["daily_goal_anchor"] = anchor
-
-        # If knowledge dropped, lower the anchor to the new level (so you can earn progress again).
-        anchor = min(anchor, new)
-        vocab["daily_goal_anchor"] = anchor
-
-        # Step size (default: 0.10). Clamp to a sane range.
-        step_size = 0.10
-        try:
-            step_size = float(((self.config_data or {}).get("settings", {}) or {}).get("daily_goal_step", step_size) or step_size)
-        except Exception:
-            step_size = 0.10
-        step_size = max(0.01, min(1.0, step_size))
-
-        if new > anchor:
-            delta_up = new - anchor
-            # How many full step_size increments were reached.
-            steps = int((delta_up + 1e-9) / step_size)
-            if steps > 0:
-                # Keep the remainder so multiple small improvements accumulate.
-                vocab["daily_goal_anchor"] = anchor + steps * step_size
-                self._update_daily_progress(steps)
-
         if persist_immediately:
             self._persist_single_entry(vocab)
 
@@ -1036,6 +1002,7 @@ class LearnMixin:
                 button.set_bg_color(self.colors["success"])
             Clock.schedule_once(lambda _dt: self._after_correct_generic(True), 0.25)
         else:
+            self._daily_goal_perfect = False
             if isinstance(button, RoundedButton):
                 button.set_bg_color(self.colors["danger"])
 
@@ -1189,6 +1156,7 @@ class LearnMixin:
             if self.connect_pairs_matched_count >= len(self.connect_pairs_items):
                 Clock.schedule_once(lambda _dt: self._connect_pairs_finish(), 0.3)
         else:
+            self._daily_goal_perfect = False
             delta_wrong = getattr(labels, "knowledge_delta_connect_pairs_wrong_word", -0.074)
             self._adjust_knowledge_level(left_entry, delta_wrong)
             self._adjust_knowledge_level(right_entry, delta_wrong)
@@ -1339,6 +1307,7 @@ class LearnMixin:
             if self.letter_salad_progress >= len(target):
                 Clock.schedule_once(lambda _dt: self._letter_salad_finish(), 0.3)
         else:
+            self._daily_goal_perfect = False
             self._adjust_knowledge_level(vocab, getattr(labels, "knowledge_delta_letter_salad_wrong_letter", -0.025))
             button.set_bg_color(self.colors["danger"])
             Clock.schedule_once(lambda _dt, b=button: b.set_bg_color(self.colors["card"]), 0.25)
@@ -1494,6 +1463,7 @@ class LearnMixin:
                 return
             Clock.schedule_once(lambda _dt: self._advance_to_next(), 0.35)
         else:
+            self._daily_goal_perfect = False
             per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
             self._adjust_knowledge_level(vocab, per_char * len(user.strip()))
             self.update_srs(vocab, was_correct=False, quality=0.0)
@@ -1720,6 +1690,7 @@ class LearnMixin:
                     active = w_i
                 else:
                     button.set_bg_color(self.colors["danger"])
+                    self._daily_goal_perfect = False
                     self._adjust_knowledge_level(item.get("vocab"), wrong_delta)
                     Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
                     return
@@ -1748,6 +1719,7 @@ class LearnMixin:
                     Clock.schedule_once(lambda _dt: self._syllable_salad_finish(), 0.3)
         else:
             button.set_bg_color(self.colors["danger"])
+            self._daily_goal_perfect = False
             self._adjust_knowledge_level(item.get("vocab"), wrong_delta)
             Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
 
