@@ -114,6 +114,8 @@ class StatsGoalMixin:
             session_default = int(settings.get("session_size", 20) or 20)
             settings["daily_target_cards"] = max(10, session_default * 2)
 
+        settings.setdefault("daily_goal_step", 0.10)
+
         today = datetime.now().date().isoformat()
         if stats_cfg.get("daily_progress_date") != today:
             stats_cfg["daily_progress_date"] = today
@@ -168,7 +170,7 @@ class StatsGoalMixin:
             self.daily_bar_main_menu.value = min(done, target)
 
         if hasattr(self, "daily_label_main_menu") and self.daily_label_main_menu:
-            template = getattr(labels, "daily_goal_main_menu_label", "Heutiges Ziel: {done}/{target} Karten")
+            template = getattr(labels, "daily_goal_main_menu_label", "Today\'s goal: {done}/{target} cards")
             self.daily_label_main_menu.text = template.format(done=done, target=target)
 
         # learn screen
@@ -177,5 +179,5 @@ class StatsGoalMixin:
             self.daily_bar_learn.value = min(done, target)
 
         if hasattr(self, "daily_label_learn") and self.daily_label_learn:
-            template = getattr(labels, "daily_goal_learn_label", "Heute: {done}/{target} Karten")
+            template = getattr(labels, "daily_goal_learn_label", "Today: {done}/{target} cards")
             self.daily_label_learn.text = template.format(done=done, target=target)

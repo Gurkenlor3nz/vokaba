@@ -95,7 +95,7 @@ class AboutDashboardMixin:
         daily_done = int(daily_done or 0)
 
         top_left = AnchorLayout(anchor_x="left", anchor_y="top", padding=30 * pad_mul)
-        back_btn = self.make_icon_button("assets/back_icon.png", on_press=self.main_menu, size=dp(56))
+        back_btn = self.make_icon_button("assets/back_button.png", on_press=self.main_menu, size=dp(56))
         top_left.add_widget(back_btn)
         self.window.add_widget(top_left)
 

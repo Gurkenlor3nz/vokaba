@@ -173,6 +173,8 @@ VOCAB_FIELDNAMES = [
     "srs_streak",
     "srs_last_seen",
     "srs_due",
+    "daily_goal_anchor",
+    "daily_goal_anchor_date",
 ]
 
 

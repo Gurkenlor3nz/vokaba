@@ -104,69 +104,118 @@ class LearnMixin:
         top_right.add_widget(back_button)
         self.learn_area.add_widget(top_right)
 
-        # Build vocab session list
-        self.all_vocab_list = []
-        self.stack_vocab_lists = {}
-        self.stack_meta_map = {}
-        self.entry_to_stack_file = {}
-
-        filenames: list[str] = []
-        for f in self._list_stack_files():
-            if os.path.isabs(f):
-                filenames.append(f)
-            else:
-                # check if f already starts with vocab_root
-                root = self.vocab_root()
-                if f.startswith(root):
-                    filenames.append(f)
-                else:
-                    filenames.append(os.path.join(root, f))
-
-        for filename in filenames:
-            try:
-                data = save.load_vocab(filename)
-            except Exception as e:
-                log(f"load_vocab failed for {filename}: {e}")
-                continue
-
-            vocab_list = []
-            own, foreign, latin = "Deutsch", "Englisch", "Latein"
-            latin_active = False
-
-            if isinstance(data, (list, tuple)):
-                if len(data) == 5:
-                    vocab_list, own, foreign, latin, latin_active = data
-                elif len(data) == 4:
-                    vocab_list, own, foreign, latin = data
-                elif len(data) == 3:
-                    vocab_list, own, foreign = data
-                elif len(data) >= 1:
-                    vocab_list = data[0]
-            elif isinstance(data, dict):
-                vocab_list = data.get("vocab_list", data.get("vocab", [])) or []
-                own = data.get("own_language", own)
-                foreign = data.get("foreign_language", foreign)
-                latin = data.get("latin_language", latin)
-                latin_active = bool(data.get("latin_active", latin_active))
-
-            vocab_list = vocab_list or []
-
-            self.stack_vocab_lists[filename] = vocab_list
-            self.stack_meta_map[filename] = (own, foreign, latin, latin_active)
-            for entry in vocab_list:
-                if "knowledge_level" not in entry:
-                    entry["knowledge_level"] = 0.0
-                self.entry_to_stack_file[id(entry)] = filename
-                self.all_vocab_list.append(entry)
-
-        random.shuffle(self.all_vocab_list)
-
-        # Limit the *pool* of cards for today to the daily goal, unless the goal is >= 500.
-        # (>=500 means: just include all vocab, even if there are more than 500.)
+        # -----------------------------
+        # Daily pool: keep ONE stable vocab pool for the day/stack while the app runs.
+        # - If daily goal <= 200: limit pool to that many cards.
+        # - If daily goal > 200: include ALL vocab (full variety).
+        # -----------------------------
+        today = datetime.now().date().isoformat()
         daily_goal = int((self.config_data.get("settings", {}) or {}).get("daily_target_cards", 300) or 300)
-        if daily_goal < 500:
-            pool_size = max(1, min(len(self.all_vocab_list), daily_goal))
-            self.all_vocab_list = self.all_vocab_list[:pool_size]
+        daily_goal = max(1, daily_goal)
+
+        expected_mode = "all" if daily_goal > 200 else "limited"
+
+        # Resolve the stack to a concrete CSV file path (if a stack was requested).
+        stack_file = self._resolve_stack_file(stack)
+        stack_key = stack_file if stack_file else None
+
+        resume_pool = (
+            getattr(self, "_daily_pool_date", None) == today
+            and getattr(self, "_daily_pool_stack_key", None) == stack_key
+            and getattr(self, "_daily_pool_mode", None) == expected_mode
+            and isinstance(getattr(self, "all_vocab_list", None), list)
+            and isinstance(getattr(self, "stack_vocab_lists", None), dict)
+            and isinstance(getattr(self, "stack_meta_map", None), dict)
+            and isinstance(getattr(self, "entry_to_stack_file", None), dict)
+            and len(self.all_vocab_list or []) > 0
+            and len(self.stack_vocab_lists or {}) > 0
+        )
+
+        if resume_pool and expected_mode == "limited":
+            try:
+                total_at_build = int(getattr(self, "_daily_pool_total_vocab_count", len(self.all_vocab_list)) or len(self.all_vocab_list))
+            except Exception:
+                total_at_build = len(self.all_vocab_list)
+            expected_size = max(1, min(total_at_build, daily_goal))
+            if len(self.all_vocab_list) != expected_size:
+                resume_pool = False
+
+        if not resume_pool:
+            # Build vocab session list (fresh)
+            self.all_vocab_list = []
+            self.stack_vocab_lists = {}
+            self.stack_meta_map = {}
+            self.entry_to_stack_file = {}
+
+            if stack is not None and stack_file is None:
+                # A stack was requested but could not be resolved. Do not fall back to other stacks.
+                self._show_no_vocab_screen()
+                return
+
+            if stack_file:
+                filenames: list[str] = [stack_file]
+            else:
+                filenames = []
+                for f in self._list_stack_files():
+                    if os.path.isabs(f):
+                        filenames.append(f)
+                    else:
+                        root = self.vocab_root()
+                        filenames.append(f if f.startswith(root) else os.path.join(root, f))
+
+            for filename in filenames:
+                try:
+                    data = save.load_vocab(filename)
+                except Exception as e:
+                    log(f"load_vocab failed for {filename}: {e}")
+                    continue
+
+                vocab_list = []
+                own, foreign, latin = "German", "English", "Latin"
+                latin_active = False
+
+                if isinstance(data, (list, tuple)):
+                    if len(data) == 5:
+                        vocab_list, own, foreign, latin, latin_active = data
+                    elif len(data) == 4:
+                        vocab_list, own, foreign, latin = data
+                    elif len(data) == 3:
+                        vocab_list, own, foreign = data
+                    elif len(data) >= 1:
+                        vocab_list = data[0]
+                elif isinstance(data, dict):
+                    vocab_list = data.get("vocab_list", data.get("vocab", [])) or []
+                    own = data.get("own_language", own)
+                    foreign = data.get("foreign_language", foreign)
+                    latin = data.get("latin_language", latin)
+                    latin_active = bool(data.get("latin_active", latin_active))
+                else:
+                    vocab_list = data or []
+
+                self.stack_vocab_lists[filename] = vocab_list
+                self.stack_meta_map[filename] = (own, foreign, latin, latin_active)
+                for entry in vocab_list:
+                    if "knowledge_level" not in entry:
+                        entry["knowledge_level"] = 0.0
+                    self.entry_to_stack_file[id(entry)] = filename
+                    self.all_vocab_list.append(entry)
+
+            random.shuffle(self.all_vocab_list)
+
+            total_vocab_count = len(self.all_vocab_list)
+
+            # Limit pool only for smaller daily goals. Otherwise include all vocab.
+            if daily_goal <= 200:
+                pool_size = max(1, min(total_vocab_count, daily_goal))
+                self.all_vocab_list = self.all_vocab_list[:pool_size]
+                self._daily_pool_mode = "limited"
+            else:
+                self._daily_pool_mode = "all"
+
+            self._daily_pool_date = today
+            self._daily_pool_stack_key = stack_key
+            self._daily_pool_stack = stack
+            self._daily_pool_total_vocab_count = total_vocab_count
 
         self.max_current_vocab_index = len(self.all_vocab_list)
 
@@ -177,19 +226,98 @@ class LearnMixin:
         # Session counters
         self.session_cards_total = int(self.config_data["settings"].get("session_size", 20) or 20)
         self.session_cards_total = max(1, min(5000, self.session_cards_total))
-        self.session_cards_done = 0
-        self.session_correct = 0
-        self.session_wrong = 0
+
+        if (not resume_pool) or (not bool(getattr(self, "_learn_session_active", False))):
+            self.session_cards_done = 0
+            self.session_correct = 0
+            self.session_wrong = 0
+            self._learn_session_active = True
+        else:
+            # Keep counters when resuming (so a short detour out of learning doesn't reset the session)
+            if not hasattr(self, "session_cards_done"):
+                self.session_cards_done = 0
+            if not hasattr(self, "session_correct"):
+                self.session_correct = 0
+            if not hasattr(self, "session_wrong"):
+                self.session_wrong = 0
 
         # Learning state
-        self.is_back = False
-        self.current_vocab_index = 0  # initialisieren, damit _pick_next_vocab_index funktioniert
-        self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
-        self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
-        self.self_rating_enabled = True
+        if (not resume_pool) or (not bool(getattr(self, "_learn_session_active", False))) or (not hasattr(self, "current_vocab_index")):
+            self.is_back = False
+            self.current_vocab_index = 0  # initialisieren, damit _pick_next_vocab_index funktioniert
+            self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
+            self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
+            self.self_rating_enabled = True
+        else:
+            # Resume: keep current vocab + mode when you briefly leave learning.
+            self.is_back = False
+            try:
+                idx = int(getattr(self, "current_vocab_index", 0) or 0)
+            except Exception:
+                idx = 0
+            if not (0 <= idx < len(self.all_vocab_list)):
+                self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
+            if not getattr(self, "learn_mode", None):
+                self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
+            if not hasattr(self, "self_rating_enabled"):
+                self.self_rating_enabled = True
 
         self._refresh_daily_progress_ui()
         self.show_current_card()
+
+    def _resolve_stack_file(self, stack: str | None) -> str | None:
+        """Resolve a stack identifier to an absolute CSV file path inside vocab_root().
+
+        The stack parameter may be:
+          - None (meaning: learn across all stacks)
+          - a filename like "French.csv"
+          - a bare name like "French" (extension will be added)
+          - a relative path inside vocab_root()
+          - an absolute path to a CSV file
+        """
+        if not stack:
+            return None
+
+        try:
+            s = str(stack).strip()
+        except Exception:
+            return None
+
+        if not s:
+            return None
+
+        # Absolute path
+        if os.path.isabs(s) and os.path.isfile(s) and s.lower().endswith(".csv"):
+            return os.path.abspath(s)
+
+        root = self.vocab_root()
+
+        # Relative path / filename
+        cand = os.path.join(root, s)
+        if os.path.isfile(cand) and cand.lower().endswith(".csv"):
+            return os.path.abspath(cand)
+
+        # Missing extension
+        if not s.lower().endswith(".csv"):
+            cand2 = os.path.join(root, s + ".csv")
+            if os.path.isfile(cand2):
+                return os.path.abspath(cand2)
+
+        # Fallback: match by basename against known stacks
+        base = os.path.basename(s)
+        stem = base[:-4] if base.lower().endswith(".csv") else base
+
+        for f in self._list_stack_files():
+            try:
+                f_abs = f if os.path.isabs(f) else os.path.join(root, f)
+                f_base = os.path.basename(f_abs)
+                f_stem = f_base[:-4] if f_base.lower().endswith(".csv") else f_base
+                if f_base.lower() == (stem + ".csv").lower() or f_stem.lower() == stem.lower():
+                    return os.path.abspath(f_abs)
+            except Exception:
+                continue
+
+        return None
 
     def recompute_available_modes(self):
         settings = (self.config_data or {}).get("settings", {}) or {}
@@ -215,6 +343,9 @@ class LearnMixin:
         # settings defaults
         settings = (self.config_data or {}).setdefault("settings", {})
         settings.setdefault("daily_target_cards", 300)
+        # How much a single vocab's knowledge_level must improve (accumulated) before
+        # it contributes +1 to the daily goal counter.
+        settings.setdefault("daily_goal_step", 0.10)
 
         # stats defaults + daily reset
         stats = (self.config_data or {}).setdefault("stats", {})
@@ -232,33 +363,54 @@ class LearnMixin:
 
 
     def _refresh_daily_progress_ui(self):
+        """
+        Refresh the daily goal label and progress bar on the learn screen.
+
+        The update is scheduled for the next UI frame to avoid timing issues
+        when this is triggered from inside animations/callbacks.
+        """
+
+        def _apply(_dt=0):
+            try:
+                stats = (self.config_data or {}).get("stats", {}) or {}
+                settings = (self.config_data or {}).get("settings", {}) or {}
+
+                done = int(stats.get("daily_cards_done", 0) or 0)
+                target = int(settings.get("daily_target_cards", 300) or 300)
+                target = max(1, target)
+
+                bar = getattr(self, "daily_bar_learn", None)
+                if bar is not None:
+                    bar.max = target
+                    bar.value = max(0, min(done, target))
+
+                lbl = getattr(self, "daily_label_learn", None)
+                if lbl is not None:
+                    label_text = getattr(labels, "daily_progress_label", "Daily goal")
+                    lbl.text = f"{label_text}: {done}/{target}"
+            except Exception as e:
+                log(f"_refresh_daily_progress_ui failed: {e}")
+
         try:
-            stats = (self.config_data or {}).get("stats", {}) or {}
-            settings = (self.config_data or {}).get("settings", {}) or {}
-
-            done = int(stats.get("daily_cards_done", 0) or 0)
-            target = int(settings.get("daily_target_cards", 300) or 300)
-            target = max(1, target)
-
-            if hasattr(self, "daily_bar_learn") and self.daily_bar_learn is not None:
-                self.daily_bar_learn.max = target
-                self.daily_bar_learn.value = max(0, min(done, target))
-
-            label_text = getattr(labels, "daily_progress_label", "Tagesziel")
-            if hasattr(self, "daily_label_learn") and self.daily_label_learn is not None:
-                self.daily_label_learn.text = f"{label_text}: {done}/{target}"
-        except Exception as e:
-            log(f"_refresh_daily_progress_ui failed: {e}")
-
+            Clock.schedule_once(_apply, 0)
+        except Exception:
+            _apply(0)
 
     def _update_daily_progress(self, inc: int = 1):
+        """
+        Increment the daily goal counter and refresh the UI.
+
+        Args:
+            inc: How many completed "daily goal steps" to add.
+        """
         try:
             inc = int(inc)
         except Exception:
             inc = 1
+        inc = max(0, inc)
 
         stats = (self.config_data or {}).setdefault("stats", {})
-        stats["daily_cards_done"] = int(stats.get("daily_cards_done", 0) or 0) + max(0, inc)
+        stats["daily_cards_done"] = int(stats.get("daily_cards_done", 0) or 0) + inc
 
         try:
             save.save_settings(self.config_data)
@@ -267,7 +419,6 @@ class LearnMixin:
 
         self._refresh_daily_progress_ui()
 
-
     def _show_no_vocab_screen(self):
         self.window.clear_widgets()
         pad_mul = float(self.config_data["settings"]["gui"]["padding_multiplicator"])
@@ -275,16 +426,16 @@ class LearnMixin:
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=40 * pad_mul)
         card = RoundedCard(orientation="vertical", size_hint=(0.8, 0.5), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
 
-        msg = self.make_title_label(getattr(labels, "no_vocab_warning", "Keine Vokabeln vorhanden."), size_hint_y=None, height=dp(60))
+        msg = self.make_title_label(getattr(labels, "no_vocab_warning", "No vocabulary available."), size_hint_y=None, height=dp(60))
         card.add_widget(msg)
 
-        hint = self.make_text_label(getattr(labels, "no_vocab_hint_create_stack", "Lege zuerst einen Stapel an."), size_hint_y=None, height=dp(40))
+        hint = self.make_text_label(getattr(labels, "no_vocab_hint_create_stack", "Create a stack first."), size_hint_y=None, height=dp(40))
         card.add_widget(hint)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        back_btn = self.make_secondary_button(getattr(labels, "no_vocab_back_to_menu", "Zurück zum Hauptmenü"), size_hint=(0.5, 1))
+        back_btn = self.make_secondary_button(getattr(labels, "no_vocab_back_to_menu", "Back to main menu"), size_hint=(0.5, 1))
         back_btn.bind(on_press=lambda _i: self.main_menu())
-        new_btn = self.make_primary_button(getattr(labels, "no_vocab_new_stack", "Neuen Stapel anlegen"), size_hint=(0.5, 1))
+        new_btn = self.make_primary_button(getattr(labels, "no_vocab_new_stack", "Create new stack"), size_hint=(0.5, 1))
         new_btn.bind(on_press=self.add_stack)
         row.add_widget(back_btn)
         row.add_widget(new_btn)
@@ -483,13 +634,13 @@ class LearnMixin:
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=40 * pad_mul)
         card = RoundedCard(orientation="vertical", size_hint=(0.8, 0.6), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
 
-        title = self.make_title_label(getattr(labels, "session_summary_title", "Session abgeschlossen"), size_hint_y=None, height=dp(40))
+        title = self.make_title_label(getattr(labels, "session_summary_title", "Session finished"), size_hint_y=None, height=dp(40))
         card.add_widget(title)
 
         txt = getattr(
             labels,
             "session_summary_text",
-            "Du hast {done} Karten abgeschlossen.\nRichtig: {correct}   Schwer/falsch: {wrong}\nSession-Ziel: {goal} Karten.",
+            "You completed {done} cards.\nCorrect: {correct}   Wrong/hard: {wrong}\nSession target: {goal} cards.",
         )
         body = self.make_text_label(
             txt.format(done=self.session_cards_done, correct=self.session_correct, wrong=self.session_wrong, goal=self.session_cards_total),
@@ -499,7 +650,7 @@ class LearnMixin:
         card.add_widget(body)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        back_btn = self.make_secondary_button(getattr(labels, "session_summary_back_button", "Zurück zum Hauptmenü"), size_hint=(0.5, 1))
+        back_btn = self.make_secondary_button(getattr(labels, "session_summary_back_button", "Back to main menu"), size_hint=(0.5, 1))
         cont_btn = self.make_primary_button(getattr(labels, "session_summary_continue_button", "Weiterlernen"), size_hint=(0.5, 1))
 
         def cont(*_a):
@@ -527,10 +678,10 @@ class LearnMixin:
         if not callable(fn):
             return
         try:
-            # neue Signatur (wie in meinem Umbau)
+            # New signature (stack-aware persistence).
             fn(vocab, self.stack_vocab_lists, self.stack_meta_map, self.entry_to_stack_file)
         except TypeError:
-            # alte Signatur: persist_single_entry(vocab)
+            # Old signature: persist_single_entry(vocab)
             try:
                 fn(vocab)
             except Exception as e:
@@ -545,7 +696,7 @@ class LearnMixin:
                 fn(self.stack_vocab_lists, self.stack_meta_map)
                 return
             except TypeError:
-                # alte Signatur ohne args
+                # Old signature without args
                 try:
                     fn()
                     return
@@ -560,7 +711,7 @@ class LearnMixin:
             try:
                 for filename, vocab_list in (self.stack_vocab_lists or {}).items():
                     own, foreign, latin, latin_active = self.stack_meta_map.get(filename,
-                                                                                ("Deutsch", "Englisch", "Latein",
+                                                                                ("German", "English", "Latin",
                                                                                  False))
                     save_vocab(filename, vocab_list, own, foreign, latin, latin_active)
             except Exception as e:
@@ -695,19 +846,51 @@ class LearnMixin:
         new = max(0.0, min(1.0, cur + d))
         vocab["knowledge_level"] = new
 
-        # Daily goal counting: a card counts as "done" once its knowledge increased by >= 0.3.
-        # We use an anchor per vocab so small increments can accumulate across interactions.
+        # Daily goal counting:
+        # A vocab contributes to the daily goal only when its knowledge_level increased by at least
+        # `settings.daily_goal_step` (accumulated per vocab via an anchor). This makes the daily
+        # counter meaningful even when individual deltas are small.
+        today = datetime.now().date().isoformat()
         try:
-            anchor = float(vocab.get("daily_goal_anchor", cur) or cur)
+            stats_date = ((self.config_data or {}).get("stats", {}) or {}).get("daily_progress_date")
+            if stats_date:
+                today = str(stats_date)
         except Exception:
+            pass
+
+        anchor_date = str(vocab.get("daily_goal_anchor_date") or "")
+        if anchor_date != today:
+            vocab["daily_goal_anchor_date"] = today
+            vocab["daily_goal_anchor"] = cur
             anchor = cur
+        else:
+            try:
+                anchor = float(vocab.get("daily_goal_anchor", cur) or cur)
+            except Exception:
+                anchor = cur
+            if "daily_goal_anchor" not in vocab:
+                vocab["daily_goal_anchor"] = anchor
 
-        # If knowledge dropped (wrong answer), don't keep the anchor above the current level.
-        anchor = min(anchor, cur)
+        # If knowledge dropped, lower the anchor to the new level (so you can earn progress again).
+        anchor = min(anchor, new)
+        vocab["daily_goal_anchor"] = anchor
 
-        if new > anchor and (new - anchor) >= 0.3:
-            vocab["daily_goal_anchor"] = new
-            self._update_daily_progress(1)
+        # Step size (default: 0.10). Clamp to a sane range.
+        step_size = 0.10
+        try:
+            step_size = float(((self.config_data or {}).get("settings", {}) or {}).get("daily_goal_step", step_size) or step_size)
+        except Exception:
+            step_size = 0.10
+        step_size = max(0.01, min(1.0, step_size))
+
+        if new > anchor:
+            delta_up = new - anchor
+            # How many full step_size increments were reached.
+            steps = int((delta_up + 1e-9) / step_size)
+            if steps > 0:
+                # Keep the remainder so multiple small improvements accumulate.
+                vocab["daily_goal_anchor"] = anchor + steps * step_size
+                self._update_daily_progress(steps)
 
         if persist_immediately:
             self._persist_single_entry(vocab)
@@ -901,7 +1084,7 @@ class LearnMixin:
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=20 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]))
         card = RoundedCard(orientation="vertical", size_hint=(0.9, 0.7), padding=dp(16), spacing=dp(16), bg_color=self.colors["card"])
 
-        header = self.make_text_label(getattr(labels, "connect_pairs_header", "Verbinde die passenden Wörter"), size_hint_y=None, height=dp(30))
+        header = self.make_text_label(getattr(labels, "connect_pairs_header", "Match the correct pairs"), size_hint_y=None, height=dp(30))
         card.add_widget(header)
 
         row = BoxLayout(orientation="horizontal", spacing=dp(24))
@@ -1089,7 +1272,7 @@ class LearnMixin:
         if latin:
             card.add_widget(self.make_text_label(latin, size_hint_y=None, height=dp(30)))
 
-        card.add_widget(self.make_text_label(getattr(labels, "letter_salad_instruction", "Tippe die Buchstaben."), size_hint_y=None, height=dp(30)))
+        card.add_widget(self.make_text_label(getattr(labels, "letter_salad_instruction", "Tap the letters in order."), size_hint_y=None, height=dp(30)))
 
         self.letter_salad_progress_label = self.make_title_label("", size_hint_y=None, height=dp(40))
         card.add_widget(self.letter_salad_progress_label)
@@ -1122,8 +1305,8 @@ class LearnMixin:
         card.add_widget(letters_scroll)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        skip_btn = self.make_secondary_button(getattr(labels, "letter_salad_skip", "Überspringen"), size_hint=(0.5, 1))
-        reshuffle_btn = self.make_secondary_button(getattr(labels, "letter_salad_reshuffle", "Neu mischen"), size_hint=(0.5, 1))
+        skip_btn = self.make_secondary_button(getattr(labels, "letter_salad_skip", "Skip"), size_hint=(0.5, 1))
+        reshuffle_btn = self.make_secondary_button(getattr(labels, "letter_salad_reshuffle", "Reshuffle"), size_hint=(0.5, 1))
         skip_btn.bind(on_press=self.letter_salad_skip)
         reshuffle_btn.bind(on_press=lambda _i: self.letter_salad())
         row.add_widget(skip_btn)
@@ -1245,7 +1428,7 @@ class LearnMixin:
         card = RoundedCard(orientation="vertical", size_hint=(0.85, 0.55), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
 
         card.add_widget(self.make_title_label(vocab.get("own_language", ""), size_hint_y=None, height=dp(40)))
-        card.add_widget(self.make_text_label(getattr(labels, "typing_mode_instruction", "Gib die passende Übersetzung ein:"), size_hint_y=None, height=dp(30)))
+        card.add_widget(self.make_text_label(getattr(labels, "typing_mode_instruction", "Type the correct translation:"), size_hint_y=None, height=dp(30)))
 
         self.typing_input = self.style_textinput(TextInput(multiline=False, size_hint=(1, None), height=self.get_textinput_height()))
         self.typing_input.bind(on_text_validate=self.typing_check_answer)
@@ -1277,8 +1460,8 @@ class LearnMixin:
         card.add_widget(self.typing_selfrating_box)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        check_btn = self.make_primary_button(getattr(labels, "typing_mode_check", "Überprüfen"), size_hint=(0.5, 1))
-        skip_btn = self.make_secondary_button(getattr(labels, "typing_mode_skip", "Überspringen"), size_hint=(0.5, 1))
+        check_btn = self.make_primary_button(getattr(labels, "typing_mode_check", "Check"), size_hint=(0.5, 1))
+        skip_btn = self.make_secondary_button(getattr(labels, "typing_mode_skip", "Skip"), size_hint=(0.5, 1))
         check_btn.bind(on_press=self.typing_check_answer)
         skip_btn.bind(on_press=self.typing_skip)
         row.add_widget(check_btn)
@@ -1295,7 +1478,7 @@ class LearnMixin:
             return
         user = (self.typing_input.text or "")
         if not user.strip():
-            self.typing_feedback_label.text = getattr(labels, "typing_mode_empty", "Bitte gib eine Antwort ein.")
+            self.typing_feedback_label.text = getattr(labels, "typing_mode_empty", "Please enter an answer.")
             return
 
         is_correct = self._is_correct_typed_answer(user, vocab)
@@ -1303,7 +1486,7 @@ class LearnMixin:
             self._adjust_knowledge_level(vocab, getattr(labels, "knowledge_delta_typing_correct", 0.093))
             self.update_srs(vocab, was_correct=True, quality=1.0)
             self.typing_feedback_label.color = self.colors["success"]
-            self.typing_feedback_label.text = getattr(labels, "typing_mode_correct", "Richtig!")
+            self.typing_feedback_label.text = getattr(labels, "typing_mode_correct", "Correct!")
             self.typing_selfrating_box.disabled = False
             self.typing_selfrating_box.opacity = 1
 
@@ -1316,7 +1499,7 @@ class LearnMixin:
             self.update_srs(vocab, was_correct=False, quality=0.0)
             self.typing_feedback_label.color = self.colors["text"]
             self.typing_feedback_label.text = (
-                f"{getattr(labels, 'typing_mode_wrong', 'Nicht ganz. Richtige Lösung:')}\n"
+                f"{getattr(labels, 'typing_mode_wrong', 'Not quite. Correct answer:')}\n"
                 f"{self._extract_main_lexeme(vocab.get('foreign_language', '') or '')}"
             )
 
@@ -1401,7 +1584,7 @@ class LearnMixin:
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]))
         card = RoundedCard(orientation="vertical", size_hint=(0.9, 0.6), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
 
-        card.add_widget(self.make_text_label(getattr(labels, "syllable_salad_instruction", "Setze die Wörter aus Silben zusammen:"), size_hint_y=None, height=dp(30)))
+        card.add_widget(self.make_text_label(getattr(labels, "syllable_salad_instruction", "Build the word from syllables:"), size_hint_y=None, height=dp(30)))
 
         self.syllable_salad_progress_box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(80), spacing=dp(4))
 
@@ -1477,8 +1660,8 @@ class LearnMixin:
 
         # skip / reshuffle
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        skip_btn = self.make_secondary_button(getattr(labels, "letter_salad_skip", "Überspringen"), size_hint=(0.5, 1))
-        reshuffle_btn = self.make_secondary_button(getattr(labels, "syllable_salad_reshuffle", "Neu mischen"), size_hint=(0.5, 1))
+        skip_btn = self.make_secondary_button(getattr(labels, "letter_salad_skip", "Skip"), size_hint=(0.5, 1))
+        reshuffle_btn = self.make_secondary_button(getattr(labels, "syllable_salad_reshuffle", "Reshuffle"), size_hint=(0.5, 1))
         skip_btn.bind(on_press=self.syllable_salad_skip)
         reshuffle_btn.bind(on_press=lambda _i: self.syllable_salad())
         row.add_widget(skip_btn)
