@@ -49,6 +49,7 @@ class LearnMixin:
 
         self.window.clear_widgets()
         self.session_start_time = datetime.now()
+        self._learning_active = True
 
         pad_mul = float(self.config_data["settings"]["gui"]["padding_multiplicator"])
         self.learn_area = FloatLayout()
@@ -105,35 +106,45 @@ class LearnMixin:
         self.learn_area.add_widget(top_right)
 
         # -----------------------------
-        # Daily pool: keep ONE stable vocab pool for the day/stack while the app runs.
-        # - If daily goal <= 200: limit pool to that many cards.
-        # - If daily goal > 200: include ALL vocab (full variety).
+        # Daily pool / stack pool
         # -----------------------------
         today = datetime.now().date().isoformat()
         daily_goal = int((self.config_data.get("settings", {}) or {}).get("daily_target_cards", 300) or 300)
         daily_goal = max(1, daily_goal)
-
         expected_mode = "all" if daily_goal > 200 else "limited"
 
-        # Resolve the stack to a concrete CSV file path (if a stack was requested).
+        # Resolve requested stack to a real csv file path
         stack_file = self._resolve_stack_file(stack)
+        log(f"LEARN request stack={stack!r} resolved={stack_file!r}")
+
+        # If a stack was requested but can't be resolved: DO NOT fall back to all stacks
+        if stack is not None and stack_file is None:
+            self._show_no_vocab_screen()
+            return
+
         stack_key = stack_file if stack_file else None
 
         resume_pool = (
-            getattr(self, "_daily_pool_date", None) == today
-            and getattr(self, "_daily_pool_stack_key", None) == stack_key
-            and getattr(self, "_daily_pool_mode", None) == expected_mode
-            and isinstance(getattr(self, "all_vocab_list", None), list)
-            and isinstance(getattr(self, "stack_vocab_lists", None), dict)
-            and isinstance(getattr(self, "stack_meta_map", None), dict)
-            and isinstance(getattr(self, "entry_to_stack_file", None), dict)
-            and len(self.all_vocab_list or []) > 0
-            and len(self.stack_vocab_lists or {}) > 0
+                getattr(self, "_daily_pool_date", None) == today
+                and getattr(self, "_daily_pool_stack_key", None) == stack_key
+                and getattr(self, "_daily_pool_mode", None) == expected_mode
+                and isinstance(getattr(self, "all_vocab_list", None), list)
+                and isinstance(getattr(self, "stack_vocab_lists", None), dict)
+                and isinstance(getattr(self, "stack_meta_map", None), dict)
+                and isinstance(getattr(self, "entry_to_stack_file", None), dict)
+                and len(self.all_vocab_list or []) > 0
+                and len(self.stack_vocab_lists or {}) > 0
         )
+
+        # IMPORTANT: if a specific stack was requested, never reuse an existing pool.
+        # This prevents leaking vocab from other stacks.
+        if stack is not None:
+            resume_pool = False
 
         if resume_pool and expected_mode == "limited":
             try:
-                total_at_build = int(getattr(self, "_daily_pool_total_vocab_count", len(self.all_vocab_list)) or len(self.all_vocab_list))
+                total_at_build = int(getattr(self, "_daily_pool_total_vocab_count", len(self.all_vocab_list)) or len(
+                    self.all_vocab_list))
             except Exception:
                 total_at_build = len(self.all_vocab_list)
             expected_size = max(1, min(total_at_build, daily_goal))
@@ -147,11 +158,7 @@ class LearnMixin:
             self.stack_meta_map = {}
             self.entry_to_stack_file = {}
 
-            if stack is not None and stack_file is None:
-                # A stack was requested but could not be resolved. Do not fall back to other stacks.
-                self._show_no_vocab_screen()
-                return
-
+            # only the selected stack OR all stacks
             if stack_file:
                 filenames: list[str] = [stack_file]
             else:
@@ -162,6 +169,8 @@ class LearnMixin:
                     else:
                         root = self.vocab_root()
                         filenames.append(f if f.startswith(root) else os.path.join(root, f))
+
+            log(f"LEARN loading filenames={filenames}")
 
             for filename in filenames:
                 try:
@@ -233,7 +242,6 @@ class LearnMixin:
             self.session_wrong = 0
             self._learn_session_active = True
         else:
-            # Keep counters when resuming (so a short detour out of learning doesn't reset the session)
             if not hasattr(self, "session_cards_done"):
                 self.session_cards_done = 0
             if not hasattr(self, "session_correct"):
@@ -242,14 +250,14 @@ class LearnMixin:
                 self.session_wrong = 0
 
         # Learning state
-        if (not resume_pool) or (not bool(getattr(self, "_learn_session_active", False))) or (not hasattr(self, "current_vocab_index")):
+        if (not resume_pool) or (not bool(getattr(self, "_learn_session_active", False))) or (
+        not hasattr(self, "current_vocab_index")):
             self.is_back = False
-            self.current_vocab_index = 0  # initialisieren, damit _pick_next_vocab_index funktioniert
+            self.current_vocab_index = 0
             self.current_vocab_index = self._pick_next_vocab_index(avoid_current=False)
             self.learn_mode = self._choose_mode_for_vocab(self._get_current_vocab())
             self.self_rating_enabled = True
         else:
-            # Resume: keep current vocab + mode when you briefly leave learning.
             self.is_back = False
             try:
                 idx = int(getattr(self, "current_vocab_index", 0) or 0)
@@ -264,6 +272,7 @@ class LearnMixin:
 
         self._refresh_daily_progress_ui()
         self.show_current_card()
+
 
     def _resolve_stack_file(self, stack: str | None) -> str | None:
         """Resolve a stack identifier to an absolute CSV file path inside vocab_root().
@@ -364,10 +373,8 @@ class LearnMixin:
 
     def _refresh_daily_progress_ui(self):
         """
-        Refresh the daily goal label and progress bar on the learn screen.
-
-        The update is scheduled for the next UI frame to avoid timing issues
-        when this is triggered from inside animations/callbacks.
+        Update all progress bars/labels if they exist (main menu + learn screen).
+        Scheduled to next frame to avoid timing issues.
         """
 
         def _apply(_dt=0):
@@ -379,15 +386,28 @@ class LearnMixin:
                 target = int(settings.get("daily_target_cards", 300) or 300)
                 target = max(1, target)
 
-                bar = getattr(self, "daily_bar_learn", None)
-                if bar is not None:
-                    bar.max = target
-                    bar.value = max(0, min(done, target))
+                # Main menu
+                bar_main = getattr(self, "daily_bar_main_menu", None)
+                if bar_main is not None:
+                    bar_main.max = target
+                    bar_main.value = max(0, min(done, target))
 
-                lbl = getattr(self, "daily_label_learn", None)
-                if lbl is not None:
-                    label_text = getattr(labels, "daily_progress_label", "Daily goal")
-                    lbl.text = f"{label_text}: {done}/{target}"
+                lbl_main = getattr(self, "daily_label_main_menu", None)
+                if lbl_main is not None:
+                    tpl = getattr(labels, "daily_goal_main_menu_label", "Heutiges Ziel: {done}/{target} Karten")
+                    lbl_main.text = tpl.format(done=done, target=target)
+
+                # Learn screen
+                bar_learn = getattr(self, "daily_bar_learn", None)
+                if bar_learn is not None:
+                    bar_learn.max = target
+                    bar_learn.value = max(0, min(done, target))
+
+                lbl_learn = getattr(self, "daily_label_learn", None)
+                if lbl_learn is not None:
+                    tpl = getattr(labels, "daily_goal_learn_label", "Heutiges Ziel: {done}/{target} Karten")
+                    lbl_learn.text = tpl.format(done=done, target=target)
+
             except Exception as e:
                 log(f"_refresh_daily_progress_ui failed: {e}")
 
@@ -395,6 +415,7 @@ class LearnMixin:
             Clock.schedule_once(_apply, 0)
         except Exception:
             _apply(0)
+
 
     def _update_daily_progress(self, inc: int = 1):
         """
@@ -701,6 +722,34 @@ class LearnMixin:
         except Exception as e:
             log(f"persist_single_entry failed: {e}")
 
+
+    def _finalize_learning_time(self):
+        """
+        Add time since session_start_time to stats.total_learn_time_seconds exactly once.
+        Also used on app shutdown.
+        """
+        try:
+            if not bool(getattr(self, "_learning_active", False)):
+                return
+            start = getattr(self, "session_start_time", None)
+            if start is None:
+                return
+
+            seconds = max(0, int((datetime.now() - start).total_seconds()))
+            if seconds <= 0:
+                return
+
+            stats_cfg = self.config_data.setdefault("stats", {})
+            stats_cfg["total_learn_time_seconds"] = int(stats_cfg.get("total_learn_time_seconds", 0) or 0) + seconds
+            save.save_settings(self.config_data)
+
+        except Exception as e:
+            log(f"_finalize_learning_time failed: {e}")
+        finally:
+            self._learning_active = False
+            self.session_start_time = None
+
+
     def persist_knowledge_levels(self):
         fn = getattr(save, "persist_all_stacks", None)
         if callable(fn):
@@ -735,16 +784,9 @@ class LearnMixin:
         except Exception:
             pass
 
-        # Update learning time
-        try:
-            start = getattr(self, "session_start_time", None)
-            if start is not None:
-                seconds = max(0, int((datetime.now() - start).total_seconds()))
-                stats_cfg = self.config_data.setdefault("stats", {})
-                stats_cfg["total_learn_time_seconds"] = int(stats_cfg.get("total_learn_time_seconds", 0) or 0) + seconds
-                save.save_settings(self.config_data)
-        except Exception as e:
-            log(f"learning time update failed: {e}")
+        # End session + persist learning time
+        self._learn_session_active = False
+        self._finalize_learning_time()
 
         self.main_menu()
 

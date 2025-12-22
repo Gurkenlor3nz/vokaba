@@ -181,3 +181,21 @@ class StatsGoalMixin:
         if hasattr(self, "daily_label_learn") and self.daily_label_learn:
             template = getattr(labels, "daily_goal_learn_label", "Today: {done}/{target} cards")
             self.daily_label_learn.text = template.format(done=done, target=target)
+
+    def _format_duration(self, total_seconds: int) -> str:
+        try:
+            s = int(total_seconds or 0)
+        except Exception:
+            s = 0
+        s = max(0, s)
+
+        h = s // 3600
+        m = (s % 3600) // 60
+        sec = s % 60
+
+        if h > 0:
+            return f"{h}h {m:02d}min"
+        if m > 0:
+            return f"{m}min {sec:02d}s"
+        return f"{sec}s"
+

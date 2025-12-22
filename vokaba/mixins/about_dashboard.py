@@ -82,7 +82,7 @@ class AboutDashboardMixin:
         total_seconds = int(stats_cfg.get("total_learn_time_seconds", 0) or 0)
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
-        time_str = f"{hours}h {minutes}min" if hours > 0 else f"{minutes}min"
+        time_str = self._format_duration(total_seconds)
 
         learned = int(overall.get("learned_vocab", 0) or 0)
         total_vocab = int(overall.get("total_vocab", 0) or 0)

@@ -8,6 +8,7 @@ from kivy.utils import platform
 import unicodedata
 
 import save
+import labels
 
 from vokaba.theme.theme_manager import apply_theme_from_config
 from vokaba.core.logging_utils import log
@@ -66,6 +67,14 @@ class VokabaApp(
         self.stack_vocab_lists = {}
         self.stack_meta_map = {}
         self.entry_to_stack_file = {}
+
+        # Window/App title (desktop title bar)
+        try:
+            self.title = getattr(labels, "welcome_text", "Vokaba")
+            Window.title = self.title
+        except Exception:
+            pass
+
 
         self.main_menu()
         return self.window
@@ -150,4 +159,18 @@ class VokabaApp(
             return True
 
         return False
+
+    def on_stop(self):
+        # Persist time + vocab updates even if the window is closed during learning
+        try:
+            if hasattr(self, "_finalize_learning_time"):
+                self._finalize_learning_time()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "persist_knowledge_levels"):
+                self.persist_knowledge_levels()
+        except Exception:
+            pass
 

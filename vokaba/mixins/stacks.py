@@ -59,9 +59,16 @@ class StacksMixin:
         grid.add_widget(add_btn)
 
         self.recompute_available_modes()
-        learn_btn = self.make_primary_button(getattr(labels, "learn_stack_vocab_button_text", "Stapel lernen"), size_hint_y=None, height=dp(64))
-        learn_btn.bind(on_press=lambda _i: self.learn(stack))
+        learn_btn = self.make_primary_button(
+            getattr(labels, "learn_stack_vocab_button_text", "Stapel lernen"),
+            size_hint_y=None,
+            height=dp(64),
+        )
+
+        # IMPORTANT: pass absolute path so LearnMixin cannot accidentally resolve the wrong thing
+        learn_btn.bind(on_press=lambda _i, f=os.path.abspath(vocab_file): self.learn(f))
         grid.add_widget(learn_btn)
+
 
         edit_btn = self.make_secondary_button(getattr(labels, "edit_vocab_button_text", "Vokabeln bearbeiten"), size_hint_y=None, height=dp(60))
         edit_btn.bind(on_press=lambda _i, v=vocab_current: self.edit_vocab(stack, v))

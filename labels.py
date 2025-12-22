@@ -19,7 +19,7 @@ cant_be_undone = "[color=ff0000]Dies kann nicht rückgängig gemacht werden![/co
 # Settings screen
 # ---------------------------------------------------------------------------
 
-settings_title_text = "Settings"
+settings_title_text = "Einstellungen"
 settings_title_font_size_slider = "Titelgröße anpassen"
 settings_title_font_size_slider_test_label = "Titelgröße"
 settings_font_size_slider = "Textgröße anpassen"
@@ -234,3 +234,14 @@ dashboard_average_knowledge = "Durchschnittlicher Wissensstand: {avg:.0f} %"
 dashboard_time_spent = "Gesamtlernzeit: {time}"
 
 dashboard_hint = "Tipp: Schau ab und zu ins Dashboard, um deinen Fortschritt im Blick zu behalten."
+
+# ---------------------------------------------------------------------------
+# Daily goal labels (used in main menu + learning header)
+# ---------------------------------------------------------------------------
+
+daily_goal_main_menu_label = "Heutiges Ziel: {done}/{target} Karten"
+daily_goal_learn_label = "Heutiges Ziel: {done}/{target} Karten"
+
+# Backwards compatibility (older code paths)
+daily_progress_label = "Heutiges Ziel"
+
