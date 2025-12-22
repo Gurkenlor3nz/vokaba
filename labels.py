@@ -226,6 +226,7 @@ settings_session_size_unit = "Karten"
 dashboard_title = "Dashboard"
 dashboard_overview_header = "Überblick"
 dashboard_learning_header = "Lernfortschritt"
+today_goal = "Heutiges Ziel"
 
 dashboard_overview_stats = "Stapel: {stacks}   Vokabeln: {total}   Einzigartige Paare: {unique}"
 dashboard_learned_progress = "Gelernte Vokabeln: {learned}/{total} ({percent:.0f} %)"
