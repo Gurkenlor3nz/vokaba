@@ -9,3 +9,13 @@ Ki für vokabel erkennung
 
 ---Android---
 Andriod app (vllt. Buildozer)
+
+
+verwirrt?, keine knopfumrandumgen beim vocab menü
+lernen grün, nach ganz oben,
+skip mit +,5 mit sehr einf
+daily -,005
+sessionlimit mit voc/3,
+standart goal auf 50
+zieht sich vokabeln aus dem arsch, wenn man keinen stapel hat, davor aber gelöscht hat
+löschen geht nicht
