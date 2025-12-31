@@ -78,11 +78,22 @@ class UIFactoryMixin:
             **kwargs,
         )
 
+    def make_success_button(self, text, **kwargs):
+        font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
+        return RoundedButton(
+            text=text,
+            bg_color=self.colors["success"],
+            color=self.colors["text"],
+            font_size=font_size,
+            **kwargs,
+        )
+
     def make_secondary_button(self, text, **kwargs):
         font_size = kwargs.pop("font_size", sp(self.cfg_int(["settings", "gui", "text_font_size"], 18)))
         return RoundedButton(
             text=text,
-            bg_color=self.colors["card"],
+            # statt "card" -> "card_selected" (wie in der CSV-Liste)
+            bg_color=self.colors.get("card_selected", self.colors["card"]),
             color=self.colors["text"],
             font_size=font_size,
             **kwargs,

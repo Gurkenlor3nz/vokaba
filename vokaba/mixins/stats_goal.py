@@ -104,24 +104,82 @@ class StatsGoalMixin:
     def _init_daily_goal_defaults(self):
         """
         Ensure daily goal exists; reset daily progress if day changed.
+        Also applies daily knowledge decay once per day.
         """
         cfg = self.config_data
         settings = cfg.setdefault("settings", {})
         stats_cfg = cfg.setdefault("stats", {})
 
-        # Keep existing target if user set it; otherwise derive from session size.
+        # Default daily goal = 50 (one-time migration if old default 300)
         if "daily_target_cards" not in settings:
-            session_default = int(settings.get("session_size", 20) or 20)
-            settings["daily_target_cards"] = max(10, session_default * 2)
+            settings["daily_target_cards"] = 50
+        else:
+            try:
+                migrated = bool(stats_cfg.get("migrated_daily_goal_50", False))
+                if (not migrated) and int(settings.get("daily_target_cards", 0) or 0) == 300:
+                    settings["daily_target_cards"] = 50
+                    stats_cfg["migrated_daily_goal_50"] = True
+            except Exception:
+                pass
 
         settings.setdefault("daily_goal_step", 0.10)
 
-        today = datetime.now().date().isoformat()
-        if stats_cfg.get("daily_progress_date") != today:
-            stats_cfg["daily_progress_date"] = today
+        today = datetime.now().date()
+        today_iso = today.isoformat()
+
+        # ----- daily decay -----
+        last_decay_iso = stats_cfg.get("knowledge_decay_date")
+        if last_decay_iso and last_decay_iso != today_iso:
+            try:
+                last_d = datetime.fromisoformat(str(last_decay_iso)).date()
+                days = max(1, (today - last_d).days)
+            except Exception:
+                days = 1
+
+            decay = 0.005 * days
+
+            for filename in self._list_stack_files():
+                try:
+                    vocab_list, own, foreign, latin, latin_active = save.load_vocab(filename)
+                except Exception:
+                    continue
+
+                changed = False
+                for e in vocab_list:
+                    try:
+                        lvl = float(e.get("knowledge_level", 0.0) or 0.0)
+                    except Exception:
+                        lvl = 0.0
+                    new_lvl = max(0.0, min(1.0, lvl - decay))
+                    if new_lvl != lvl:
+                        e["knowledge_level"] = new_lvl
+                        changed = True
+
+                if changed:
+                    try:
+                        save.save_to_vocab(
+                            vocab_list,
+                            filename,
+                            own_lang=own or "Deutsch",
+                            foreign_lang=foreign or "Englisch",
+                            latin_lang=latin or "Latein",
+                            latin_active=bool(latin_active),
+                        )
+                    except Exception:
+                        pass
+
+            stats_cfg["knowledge_decay_date"] = today_iso
+
+        elif not last_decay_iso:
+            stats_cfg["knowledge_decay_date"] = today_iso
+
+        # ----- daily progress reset -----
+        if stats_cfg.get("daily_progress_date") != today_iso:
+            stats_cfg["daily_progress_date"] = today_iso
             stats_cfg["daily_cards_done"] = 0
 
         save.save_settings(cfg)
+
 
     def _get_daily_progress_values(self) -> tuple[int, int]:
         self._init_daily_goal_defaults()

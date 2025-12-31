@@ -342,7 +342,7 @@ def load_settings() -> dict:
     """
     default_config = {
         "settings": {
-            "daily_target_cards": 300,
+            "daily_target_cards": 50,
             "gui": {
                 "title_font_size": 32,
                 "text_font_size": 18,

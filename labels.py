@@ -108,7 +108,7 @@ settings_theme_reset = "Zurücksetzen"
 # Knowledge-level deltas für verschiedene Übungstypen
 # ---------------------------------------------------------------------------
 
-knowledge_delta_self_very_easy = 0.09
+knowledge_delta_self_very_easy = 0.35
 knowledge_delta_self_easy = 0.05
 knowledge_delta_self_hard = -0.01
 knowledge_delta_self_very_hard = -0.08
@@ -194,6 +194,8 @@ about_discord_text = (
 about_discord_button = "Zum Discord-Server"
 
 about_discord_link_prefix = "Direkter Link:"
+
+about_ai_disclaimer = "Hinweis: Bei der Entwicklung dieser App wurden KI-Tools verwendet."
 
 
 # ---------------------------------------------------------------------------

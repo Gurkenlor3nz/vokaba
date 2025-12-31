@@ -54,24 +54,29 @@ class StacksMixin:
         grid = GridLayout(cols=1, spacing=dp(12), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
-        add_btn = self.make_primary_button(getattr(labels, "add_vocab_button_text", "Vokabeln hinzufügen"), size_hint_y=None, height=dp(64))
-        add_btn.bind(on_press=lambda _i: self.add_vocab(stack, vocab_current))
-        grid.add_widget(add_btn)
-
         self.recompute_available_modes()
-        learn_btn = self.make_primary_button(
+        learn_btn = self.make_success_button(
             getattr(labels, "learn_stack_vocab_button_text", "Stapel lernen"),
             size_hint_y=None,
             height=dp(64),
         )
-
-        # IMPORTANT: pass absolute path so LearnMixin cannot accidentally resolve the wrong thing
-        learn_btn.bind(on_press=lambda _i, f=os.path.abspath(vocab_file): self.learn(f))
+        learn_btn.bind(on_press=lambda _i: self.learn(stack=stack))
         grid.add_widget(learn_btn)
 
+        add_btn = self.make_primary_button(
+            getattr(labels, "add_vocab_button_text", "Vokabeln hinzufügen"),
+            size_hint_y=None,
+            height=dp(64),
+        )
+        add_btn.bind(on_press=lambda _i: self.add_vocab(stack, vocab_current))
+        grid.add_widget(add_btn)
 
-        edit_btn = self.make_secondary_button(getattr(labels, "edit_vocab_button_text", "Vokabeln bearbeiten"), size_hint_y=None, height=dp(60))
-        edit_btn.bind(on_press=lambda _i, v=vocab_current: self.edit_vocab(stack, v))
+        edit_btn = self.make_secondary_button(
+            getattr(labels, "edit_vocab_button_text", "Vokabeln bearbeiten"),
+            size_hint_y=None,
+            height=dp(64),
+        )
+        edit_btn.bind(on_press=lambda _i: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_btn)
 
         import_export = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(60), spacing=dp(8))
@@ -135,10 +140,35 @@ class StacksMixin:
         self.window.add_widget(center)
 
     def delete_stack(self, stack: str, _instance=None):
+        filename = os.path.abspath(os.path.join(self.vocab_root(), stack))
+
         try:
-            os.remove(os.path.join(self.vocab_root(), stack))
+            os.remove(filename)
         except Exception as e:
             log(f"delete_stack failed: {e}")
+
+        # purge in-memory autosave caches so it can't be re-created on exit
+        try:
+            if isinstance(getattr(self, "all_vocab_list", None), list) and isinstance(
+                    getattr(self, "entry_to_stack_file", None), dict):
+                ids_in_stack = {id(e) for e in self.all_vocab_list if self.entry_to_stack_file.get(id(e)) == filename}
+                self.all_vocab_list = [e for e in self.all_vocab_list if id(e) not in ids_in_stack]
+                for _id in ids_in_stack:
+                    self.entry_to_stack_file.pop(_id, None)
+
+            if isinstance(getattr(self, "stack_vocab_lists", None), dict):
+                self.stack_vocab_lists.pop(filename, None)
+            if isinstance(getattr(self, "stack_meta_map", None), dict):
+                self.stack_meta_map.pop(filename, None)
+
+            # also invalidate daily pool cache if it referenced this stack
+            if getattr(self, "_daily_pool_stack_key", None) == filename:
+                self._daily_pool_date = None
+                self._daily_pool_stack_key = None
+                self._daily_pool_total_vocab_count = None
+        except Exception:
+            pass
+
         self.main_menu()
 
     # --------------------

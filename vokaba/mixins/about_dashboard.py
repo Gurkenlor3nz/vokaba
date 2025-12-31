@@ -62,6 +62,15 @@ class AboutDashboardMixin:
 
         content.add_widget(self.make_text_label(f"{getattr(labels, 'about_discord_link_prefix', 'Direkter Link:')} {DISCORD_URL}", size_hint_y=None, height=dp(40)))
 
+        content.add_widget(
+            self.make_text_label(
+                getattr(labels, "about_ai_disclaimer",
+                        "Hinweis: Bei der Entwicklung dieser App wurden KI-Tools verwendet."),
+                size_hint_y=None,
+                height=dp(60),
+            )
+        )
+
         scroll.add_widget(content)
         card.add_widget(scroll)
         center.add_widget(card)
