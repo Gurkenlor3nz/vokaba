@@ -3,6 +3,7 @@ from datetime import datetime
 import save
 import labels
 from vokaba.core.logging_utils import log
+from vokaba.core.paths import vocab_root_string
 
 
 class StatsGoalMixin:
@@ -13,12 +14,8 @@ class StatsGoalMixin:
     """
 
     def vocab_root(self) -> str:
-        root = getattr(labels, "vocab_path", "vocab/")
-        root = root.replace("\\", "/")
-        if not root.endswith("/"):
-            root += "/"
-        os.makedirs(root, exist_ok=True)
-        return root
+        return vocab_root_string()
+
 
     def _list_stack_files(self):
         root = self.vocab_root()

@@ -3,6 +3,7 @@ import os
 import yaml
 import unicodedata
 from typing import Dict, List, Tuple, Optional
+from vokaba.core.paths import config_path, migrate_legacy_data, ensure_data_layout
 
 
 # ------------------------------------------------------------
@@ -371,13 +372,17 @@ def load_settings() -> dict:
         },
     }
 
-    if not os.path.exists("config.yml"):
-        with open("config.yml", "w", encoding="utf-8") as f:
+    migrate_legacy_data()  # einmalig alte config/csvs rüberziehen
+    ensure_data_layout()
+    cfg_path = str(config_path())
+
+    if not os.path.exists(cfg_path):
+        with open(cfg_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(default_config, f, allow_unicode=True, sort_keys=False)
         return default_config
 
     try:
-        with open("config.yml", "r", encoding="utf-8") as f:
+        with open(cfg_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception:
         data = {}
@@ -415,8 +420,10 @@ def load_settings() -> dict:
 
 
 def save_settings(config: dict) -> None:
-    with open("config.yml", "w", encoding="utf-8") as f:
+    ensure_data_layout()
+    with open(str(config_path()), "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+
 
 
 # ------------------------------------------------------------

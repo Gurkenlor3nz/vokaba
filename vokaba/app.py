@@ -4,6 +4,8 @@ from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.textinput import TextInput
 from kivy.utils import platform
+from kivy.resources import resource_add_path
+
 
 import unicodedata
 
@@ -24,6 +26,7 @@ from vokaba.mixins.add_vocab import AddVocabMixin
 from vokaba.mixins.edit_vocab import EditVocabMixin
 from vokaba.mixins.about_dashboard import AboutDashboardMixin
 from vokaba.mixins.learn import LearnMixin
+from vokaba.core.paths import runtime_root
 
 
 class VokabaApp(
@@ -46,6 +49,7 @@ class VokabaApp(
 
     def build(self):
         # Disable multitouch only on desktop
+        resource_add_path(str(runtime_root()))
         if platform in ("win", "linux", "macosx"):
             Config.set("input", "mouse", "mouse,disable_multitouch")
 
