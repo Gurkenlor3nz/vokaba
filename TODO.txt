@@ -10,5 +10,12 @@ Ki für vokabel erkennung
 ---Android---
 Andriod app (vllt. Buildozer)
 
-
+important before release:
 import button nach stapel hinzufügen bewegen
+sprachen als dropdown
+durchtabben beim stapel erstellen
+fremd und eigensprache umdrehen beim eintippen
+teilen button beim exportieren (fürt teilen dialog aus, sonst bei pc den speichern unter dialog)
+fertig screen erst nach fertigstellung des daily goal
+export import extrem schwer für android, nicht in documents folder
+wenn mgl, teilen an vokaba app
