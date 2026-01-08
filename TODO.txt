@@ -19,3 +19,5 @@ teilen button beim exportieren (fürt teilen dialog aus, sonst bei pc den speich
 fertig screen erst nach fertigstellung des daily goal
 export import extrem schwer für android, nicht in documents folder
 wenn mgl, teilen an vokaba app
+beim Tippen sind Leerzeichen kaputt
+beim Silben Modus ist un, und un , nicht das gleiche, unfair beim eingeben
