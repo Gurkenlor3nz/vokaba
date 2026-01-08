@@ -2,14 +2,21 @@ import os
 from kivy.metrics import dp, sp
 from kivy.core.window import Window
 from kivy.clock import Clock
+from kivy.utils import platform as kivy_platform
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.popup import Popup
+from kivy.uix.spinner import Spinner
 
 from vokaba.ui.widgets.rounded import RoundedButton
 from vokaba.theme.theme_manager import get_icon_path
 
+try:
+    from plyer import filechooser as plyer_filechooser
+except Exception:
+    plyer_filechooser = None
 
 class UIFactoryMixin:
     """
@@ -174,6 +181,197 @@ class UIFactoryMixin:
         except Exception:
             return False
         return h > w
+
+    # ----------------------------
+    # Language helpers (dropdown)
+    # ----------------------------
+
+    def get_common_learning_languages(self):
+        """
+        Übliche Lernsprachen in Deutschland + relativ TTS-freundlich (offline eher verfügbar).
+        Nicht zu viele, bewusst kompakt.
+        """
+        return [
+            "Deutsch",
+            "Englisch",
+            "Französisch",
+            "Spanisch",
+            "Italienisch",
+            "Türkisch",
+            "Arabisch",
+            "Russisch",
+            "Polnisch",
+            "Niederländisch",
+        ]
+
+    def style_spinner(self, spn: Spinner) -> Spinner:
+        # Spinner ist intern ein Button
+        spn.background_normal = ""
+        spn.background_down = ""
+        spn.background_color = self.colors.get("card_selected", self.colors.get("card", (0, 0, 0, 1)))
+        spn.color = self.colors.get("text", (1, 1, 1, 1))
+        spn.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
+        spn.halign = "center"
+        spn.valign = "middle"
+        spn.text_size = (spn.width, None)
+        spn.padding = [dp(10), dp(10)]
+        return spn
+
+    def make_language_spinner(self, default: str = "Deutsch", *, allow_custom: bool = True, **kwargs) -> Spinner:
+        values = list(self.get_common_learning_languages())
+        other_label = "Andere…"
+        if allow_custom and other_label not in values:
+            values.append(other_label)
+
+        spn = Spinner(text=default or "Deutsch", values=values, **kwargs)
+        self.style_spinner(spn)
+
+        if allow_custom:
+            state = {"prev": spn.text}
+
+            def _open_custom_popup():
+                content = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(10))
+                ti = self.style_textinput(
+                    TextInput(text="", multiline=False, size_hint_y=None, height=self.get_textinput_height())
+                )
+                content.add_widget(ti)
+
+                row = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(44))
+                cancel_btn = self.make_secondary_button("Abbrechen", size_hint=(0.5, 1))
+                ok_btn = self.make_primary_button("OK", size_hint=(0.5, 1))
+                row.add_widget(cancel_btn)
+                row.add_widget(ok_btn)
+                content.add_widget(row)
+
+                popup = Popup(title="Sprache eingeben", content=content, size_hint=(0.85, None), height=dp(220))
+
+                def _cancel(*_a):
+                    spn.text = state["prev"]
+                    popup.dismiss()
+
+                def _ok(*_a):
+                    val = (ti.text or "").strip()
+                    if val:
+                        spn.text = val
+                        state["prev"] = val
+                    else:
+                        spn.text = state["prev"]
+                    popup.dismiss()
+
+                cancel_btn.bind(on_press=_cancel)
+                ok_btn.bind(on_press=_ok)
+
+                popup.open()
+                Clock.schedule_once(lambda _dt: setattr(ti, "focus", True), 0.05)
+
+            def _on_text(_inst, value):
+                if value == other_label:
+                    # Spinner nicht auf "Andere…" stehen lassen
+                    spn.text = state["prev"]
+                    _open_custom_popup()
+                else:
+                    state["prev"] = value
+
+            spn.bind(text=_on_text)
+
+        return spn
+
+    # ----------------------------
+    # System file dialogs (Import/Export)
+    # ----------------------------
+
+    def _tk_dialogs(self):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception:
+            return None, None
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+        except Exception:
+            return None, None
+
+        return root, filedialog
+
+    def desktop_open_file_dialog(self, *, title="Datei öffnen", filetypes=None, initialdir=None):
+        root, filedialog = self._tk_dialogs()
+        if root is None:
+            return None
+        try:
+            path = filedialog.askopenfilename(title=title, filetypes=filetypes, initialdir=initialdir)
+            return path or None
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+    def desktop_save_file_dialog(self, *, title="Speichern unter", filetypes=None, initialdir=None, initialfile=None):
+        root, filedialog = self._tk_dialogs()
+        if root is None:
+            return None
+        try:
+            path = filedialog.asksaveasfilename(
+                title=title,
+                filetypes=filetypes,
+                initialdir=initialdir,
+                initialfile=initialfile,
+                defaultextension=".csv",
+            )
+            return path or None
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+    def run_open_file_dialog(self, on_selection, *, filters=None, title="Datei öffnen") -> bool:
+        """
+        System-Öffnen-Dialog:
+        - Android: plyer.filechooser.open_file (system picker)
+        - Desktop: Tk open dialog
+        Ruft on_selection(list_of_paths) auf.
+        Gibt True zurück, wenn ein Dialog versucht wurde.
+        """
+        # Android system picker via plyer
+        if kivy_platform == "android" and plyer_filechooser is not None:
+            try:
+                plyer_filechooser.open_file(on_selection=on_selection, filters=filters or ["*.csv"])
+                return True
+            except Exception:
+                pass
+
+        # Desktop: Tk dialog
+        if kivy_platform in ("win", "linux", "macosx"):
+            ft = [("CSV", "*.csv"), ("Alle Dateien", "*.*")]
+            try:
+                path = self.desktop_open_file_dialog(title=title, filetypes=ft)
+                on_selection([path] if path else [])
+                return True
+            except Exception:
+                pass
+
+        return False
+
+    def run_save_file_dialog(self, on_selection, *, default_filename="export.csv", title="Speichern unter") -> bool:
+        """
+        System-Speichern-Dialog (Desktop).
+        Ruft on_selection(list_of_paths) auf.
+        """
+        if kivy_platform in ("win", "linux", "macosx"):
+            ft = [("CSV", "*.csv"), ("Alle Dateien", "*.*")]
+            try:
+                path = self.desktop_save_file_dialog(title=title, filetypes=ft, initialfile=default_filename)
+                on_selection([path] if path else [])
+                return True
+            except Exception:
+                pass
+
+        return False
+
 
     def create_accent_bar(self):
         accents = ["é", "è", "ê", "ë", "à", "â", "î", "ï", "ô", "ù", "û", "ç", "œ", "æ"]

@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime
 
 from kivy.metrics import dp
+from kivy.utils import platform as kivy_platform
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.filechooser import FileChooserIconView
@@ -21,6 +22,12 @@ try:
     from plyer import filechooser as plyer_filechooser
 except Exception:
     plyer_filechooser = None
+
+try:
+    from plyer import share as plyer_share
+except Exception:
+    plyer_share = None
+
 
 
 class StacksMixin:
@@ -79,14 +86,14 @@ class StacksMixin:
         edit_btn.bind(on_press=lambda _i: self.edit_vocab(stack, vocab_current))
         grid.add_widget(edit_btn)
 
-        import_export = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(60), spacing=dp(8))
-        import_btn = self.make_secondary_button(getattr(labels, "stack_import_button_text", "Importieren …"), size_hint=(0.5, 1))
-        export_btn = self.make_secondary_button(getattr(labels, "stack_export_button_text", "Exportieren …"), size_hint=(0.5, 1))
-        import_btn.bind(on_press=lambda _i: self.import_stack_dialog(stack))
+        export_btn = self.make_secondary_button(
+            getattr(labels, "stack_export_button_text", "Exportieren …"),
+            size_hint_y=None,
+            height=dp(60),
+        )
         export_btn.bind(on_press=lambda _i: self.export_stack_dialog(stack))
-        import_export.add_widget(import_btn)
-        import_export.add_widget(export_btn)
-        grid.add_widget(import_export)
+        grid.add_widget(export_btn)
+
 
         meta_btn = self.make_secondary_button(getattr(labels, "edit_metadata_button_text", "Metadaten Bearbeiten"), size_hint_y=None, height=dp(60))
         meta_btn.bind(on_press=lambda _i: self.edit_metadata(stack))
@@ -179,6 +186,44 @@ class StacksMixin:
         vocab_root = self.vocab_root()
         src = os.path.join(vocab_root, stack)
 
+        # Android: System-Teilen (Share Sheet)
+        if kivy_platform == "android" and plyer_share is not None:
+            try:
+                # je nach Plyer-Version:
+                try:
+                    plyer_share.share(filepath=src, mime_type="text/csv", title="Stapel exportieren")
+                except TypeError:
+                    plyer_share.share(filepath=src, title="Stapel exportieren")
+                return
+            except Exception as e:
+                log(f"share export failed, fallback to dialogs: {e}")
+
+        def copy_to(selection):
+            if not selection:
+                return
+            dest = selection[0]
+            if not dest:
+                return
+            if not str(dest).lower().endswith(".csv"):
+                dest = str(dest) + ".csv"
+            try:
+                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                shutil.copy2(src, dest)
+            except Exception as e:
+                log(f"export failed: {e}")
+
+        # Desktop: System-"Speichern unter…" (Tk), falls verfügbar
+        try:
+            if hasattr(self, "run_save_file_dialog") and self.run_save_file_dialog(
+                copy_to,
+                default_filename=os.path.basename(stack),
+                title="Stapel exportieren",
+            ):
+                return
+        except Exception as e:
+            log(f"native save dialog failed, fallback: {e}")
+
+        # Fallback: Kivy Verzeichnis-Auswahl
         chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=True)
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
         content.add_widget(chooser)
@@ -208,6 +253,7 @@ class StacksMixin:
         ok_btn.bind(on_press=do_export)
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
+
 
     def import_stack_dialog(self, stack: str, _instance=None):
         vocab_root = self.vocab_root()

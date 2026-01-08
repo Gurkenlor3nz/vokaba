@@ -34,6 +34,8 @@ class AddVocabMixin:
         log("entered add vocab")
         self.reload_config()
         self.window.clear_widgets()
+        self._add_vocab_swapped = False
+
 
         pad_mul = float(self.config_data["settings"]["gui"]["padding_multiplicator"])
         input_h = self.get_textinput_height()
@@ -46,15 +48,21 @@ class AddVocabMixin:
         form = BoxLayout(orientation="vertical", spacing=dp(12), padding=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        # Foreign first
-        form.add_widget(self.make_title_label(getattr(labels, "add_foreign_language", "Fremdsprache:"), size_hint_y=None, height=dp(32)))
-        self.add_foreign_language = self.style_textinput(TextInput(size_hint=(1, None), height=input_h, multiline=False))
+
+        self._lbl_foreign = self.make_title_label(getattr(labels, "add_foreign_language", "Fremdsprache:"),
+                                                  size_hint_y=None, height=dp(32))
+        form.add_widget(self._lbl_foreign)
+        self.add_foreign_language = self.style_textinput(
+            TextInput(size_hint=(1, None), height=input_h, multiline=False))
         form.add_widget(self.add_foreign_language)
 
-        # Own
-        form.add_widget(self.make_title_label(getattr(labels, "add_own_language", "Eigene Sprache:"), size_hint_y=None, height=dp(32)))
+
+        self._lbl_own = self.make_title_label(getattr(labels, "add_own_language", "Eigene Sprache:"), size_hint_y=None,
+                                              height=dp(32))
+        form.add_widget(self._lbl_own)
         self.add_own_language = self.style_textinput(TextInput(size_hint=(1, None), height=input_h, multiline=False))
         form.add_widget(self.add_own_language)
+
 
         # Optional third
         self.third_column_input = None
@@ -97,6 +105,11 @@ class AddVocabMixin:
         center.add_widget(card)
         self.window.add_widget(center)
 
+        # Swap button (top-left)
+        top_left = AnchorLayout(anchor_x="left", anchor_y="top", padding=30 * pad_mul)
+        top_left.add_widget(self.make_icon_button("assets/swap_icon.png", on_press=self._swap_add_vocab_fields, size=dp(56)))
+        self.window.add_widget(top_left)
+
         # Back button (top-right)
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30 * pad_mul)
         top_right.add_widget(self.make_icon_button("assets/back_button.png", on_press=self._on_add_vocab_back, size=dp(56)))
@@ -118,8 +131,16 @@ class AddVocabMixin:
         Clock.schedule_once(_refocus, 0)
 
     def add_vocab_button_func(self, vocab_list: list, stack: str, _instance=None):
-        own = (self.add_own_language.text or "").strip()
-        foreign = (self.add_foreign_language.text or "").strip()
+        swapped = bool(getattr(self, "_add_vocab_swapped", False))
+
+        # Wenn swapped: oberes Feld = "Eigen", unteres Feld = "Fremd"
+        if swapped:
+            own = (self.add_foreign_language.text or "").strip()
+            foreign = (self.add_own_language.text or "").strip()
+        else:
+            own = (self.add_own_language.text or "").strip()
+            foreign = (self.add_foreign_language.text or "").strip()
+
         third = (self.third_column_input.text or "").strip() if self.third_column_input else ""
         info = (self.add_additional_info.text or "").strip()
 
@@ -140,9 +161,28 @@ class AddVocabMixin:
         self.add_vocab_error_label.text = ""
         self.clear_inputs()
 
+
     # ------------------------
     # Keyboard navigation
     # ------------------------
+
+    def _swap_add_vocab_fields(self, _instance=None):
+        """
+        Swapped nur die Bedeutung/Labels der beiden Hauptfelder.
+        UI bleibt stabil, Tabben bleibt stabil, aber Reihenfolge (Eigen/Fremd) wirkt getauscht.
+        """
+        self._add_vocab_swapped = not bool(getattr(self, "_add_vocab_swapped", False))
+
+        if not hasattr(self, "_lbl_foreign") or not hasattr(self, "_lbl_own"):
+            return
+
+        if self._add_vocab_swapped:
+            self._lbl_foreign.text = getattr(labels, "add_own_language", "Eigene Sprache:")
+            self._lbl_own.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
+        else:
+            self._lbl_foreign.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
+            self._lbl_own.text = getattr(labels, "add_own_language", "Eigene Sprache:")
+
 
     def on_key_down(self, _window, key, _scancode, _codepoint, modifiers):
         """

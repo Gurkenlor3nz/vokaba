@@ -145,13 +145,21 @@ class EditVocabMixin:
         layout = BoxLayout(orientation="vertical", spacing=dp(12), padding=dp(8), size_hint_y=None)
         layout.bind(minimum_height=layout.setter("height"))
 
-        layout.add_widget(self.make_title_label(getattr(labels, "add_foreign_language", "Fremdsprache:"), size_hint_y=None, height=dp(32)))
-        self.edit_foreign_language_textbox = self.style_textinput(TextInput(text=meta[1] or "", multiline=False, size_hint=(1, None), height=input_h))
+        self.edit_foreign_language_textbox = self.make_language_spinner(
+            default=(meta[1] or "Englisch"),
+            size_hint=(1, None),
+            height=input_h,
+        )
         layout.add_widget(self.edit_foreign_language_textbox)
 
-        layout.add_widget(self.make_title_label(getattr(labels, "add_own_language", "Eigene Sprache:"), size_hint_y=None, height=dp(32)))
-        self.edit_own_language_textbox = self.style_textinput(TextInput(text=meta[0] or "", multiline=False, size_hint=(1, None), height=input_h))
+
+        self.edit_own_language_textbox = self.make_language_spinner(
+            default=(meta[0] or "Deutsch"),
+            size_hint=(1, None),
+            height=input_h,
+        )
         layout.add_widget(self.edit_own_language_textbox)
+
 
         layout.add_widget(self.make_title_label(getattr(labels, "add_stack_filename", "Stapelname:"), size_hint_y=None, height=dp(32)))
         self.edit_name_textbox = self.style_textinput(TextInput(text=stack[:-4], multiline=False, size_hint=(1, None), height=input_h))
