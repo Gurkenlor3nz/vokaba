@@ -100,6 +100,8 @@ class AddStackMixin:
 
     def import_stack_button_func(self, _instance=None):
         """Importiert eine CSV als NEUEN Stapel in den lokalen vocab-Ordner."""
+        from kivy.utils import platform as kivy_platform  # <-- wichtig (verhindert Android-crash)
+
         vocab_root = self.vocab_root()
         os.makedirs(vocab_root, exist_ok=True)
 
@@ -137,7 +139,6 @@ class AddStackMixin:
                 log(f"Import failed: {e}")
                 self.add_stack_error_label.text = getattr(labels, "import_failed", "Fehler beim Import")
 
-        # 1) System-Dialog (Android Picker / Desktop Öffnen)
         def on_sel(selection):
             if selection:
                 do_import(selection[0])
@@ -148,9 +149,8 @@ class AddStackMixin:
             ):
                 return
         except Exception as e:
-            log(f"System open dialog failed, fallback: {e}")
+            log(f"System open dialog failed: {e}")
 
-        # Android: KEIN Kivy-Chooser-Fallback
         if kivy_platform == "android":
             self.add_stack_error_label.text = (
                 "Auf Android muss der System-Dateiauswahldialog aufgehen.\n"
@@ -158,7 +158,6 @@ class AddStackMixin:
             )
             return
 
-        # 2) Desktop-Fallback: Kivy FileChooser
         chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=False, filters=["*.csv"])
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
         content.add_widget(chooser)

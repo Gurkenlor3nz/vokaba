@@ -11,9 +11,5 @@ Ki für vokabel erkennung
 Andriod app (vllt. Buildozer)
 
 important before release:
-fertig screen erst nach fertigstellung des daily goal
-export import extrem schwer für android, nicht in documents folder
-beim Tippen sind Leerzeichen kaputt
-beim Silben Modus ist un, und un , nicht das gleiche, unfair beim eingeben
-dropdown wird gewrappt, obwohl die ganze zeile frei ist
-share dialog bei meinem android tablet wurde nicht gestartet, nach dem installieren von plyer immernoch nicht gefixt s6lite pydroid, buildozer wirklich nötig?
+beim silben modus, sollte man wenn man 2 mal das gleiche hat, beide für beides nehmen können, dabei sollten leerzeichen ignoriert werden
+share passiert nicht, beim exportieren passiert beim tablet einfach nichts, beim import crasht es sogar. PC geht alles sauber

@@ -481,7 +481,7 @@ class UIFactoryMixin:
     def _android_share_file_intent(self, filepath: str, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
         """
         Share-Sheet via Android Intent.
-        Versucht FileProvider (androidx / support). Fallback: Text teilen.
+        Startet Activity auf dem Android UI Thread (wichtig für manche Geräte/ROMs).
         """
         try:
             from jnius import autoclass
@@ -491,13 +491,17 @@ class UIFactoryMixin:
             Intent = autoclass("android.content.Intent")
             File = autoclass("java.io.File")
             Uri = autoclass("android.net.Uri")
+
+            try:
+                from android.runnable import run_on_ui_thread
+            except Exception:
+                run_on_ui_thread = None
         except Exception:
             return False
 
         file_obj = File(filepath)
         uri = None
 
-        # 1) FileProvider (best)
         FileProvider = None
         try:
             FileProvider = autoclass("androidx.core.content.FileProvider")
@@ -516,27 +520,40 @@ class UIFactoryMixin:
                 except Exception:
                     uri = None
 
-        # 2) Last resort: file:// (kann auf Android 7+ knallen, deshalb try/except)
         if uri is None:
             try:
                 uri = Uri.fromFile(file_obj)
             except Exception:
                 uri = None
 
-        # 3) Intent bauen
-        try:
-            if uri is not None:
+        def _start(intent_obj):
+            try:
+                chooser = Intent.createChooser(intent_obj, title)
+                if run_on_ui_thread is not None:
+                    @run_on_ui_thread
+                    def _go():
+                        activity.startActivity(chooser)
+
+                    _go()
+                else:
+                    activity.startActivity(chooser)
+                return True
+            except Exception:
+                return False
+
+        # try file share
+        if uri is not None:
+            try:
                 intent = Intent(Intent.ACTION_SEND)
                 intent.setType(mime_type or "*/*")
                 intent.putExtra(Intent.EXTRA_STREAM, uri)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                chooser = Intent.createChooser(intent, title)
-                activity.startActivity(chooser)
-                return True
-        except Exception:
-            pass
+                if _start(intent):
+                    return True
+            except Exception:
+                pass
 
-        # Fallback: als Text teilen (Share-Sheet ist dann sicher da, aber ohne Datei-Anhang)
+        # fallback: share as text (at least share sheet opens)
         try:
             try:
                 txt = open(filepath, "r", encoding="utf-8").read()
@@ -545,24 +562,24 @@ class UIFactoryMixin:
             intent = Intent(Intent.ACTION_SEND)
             intent.setType("text/plain")
             intent.putExtra(Intent.EXTRA_TEXT, txt)
-            chooser = Intent.createChooser(intent, title)
-            activity.startActivity(chooser)
-            return True
+            return _start(intent)
         except Exception:
             return False
 
     def run_share_file_dialog(self, filepath: str, *, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
-        """
-        Android: Share-Sheet (kein "Speichern unter")
-        Desktop: False (da nutzt du weiterhin run_save_file_dialog).
-        """
         if not filepath:
             return False
-
         if kivy_platform != "android":
             return False
 
-        # 1) plyer.share, wenn vorhanden
+        # 1) Intent first (reliable)
+        try:
+            if self._android_share_file_intent(filepath, mime_type=mime_type, title=title):
+                return True
+        except Exception:
+            pass
+
+        # 2) plyer.share fallback
         if plyer_share is not None:
             try:
                 try:
@@ -573,8 +590,7 @@ class UIFactoryMixin:
             except Exception:
                 pass
 
-        # 2) Intent fallback
-        return self._android_share_file_intent(filepath, mime_type=mime_type, title=title)
+        return False
 
 
     def create_accent_bar(self):

@@ -1522,13 +1522,30 @@ class LearnMixin:
 
         self.header_label.text = ""
 
-        center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]))
-        card = RoundedCard(orientation="vertical", size_hint=(0.85, 0.55), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
+        # reset typing flow state
+        self._typing_waiting_self_rating = False
+        self._typing_pending_vocab_id = None
+
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=30 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]),
+        )
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.85, 0.55),
+            padding=dp(16),
+            spacing=dp(12),
+            bg_color=self.colors["card"],
+        )
 
         card.add_widget(self.make_title_label(vocab.get("own_language", ""), size_hint_y=None, height=dp(40)))
-        card.add_widget(self.make_text_label(getattr(labels, "typing_mode_instruction", "Type the correct translation:"), size_hint_y=None, height=dp(30)))
+        card.add_widget(
+            self.make_text_label(getattr(labels, "typing_mode_instruction", "Type the correct translation:"),
+                                 size_hint_y=None, height=dp(30)))
 
-        self.typing_input = self.style_textinput(TextInput(multiline=False, size_hint=(1, None), height=self.get_textinput_height()))
+        self.typing_input = self.style_textinput(
+            TextInput(multiline=False, size_hint=(1, None), height=self.get_textinput_height()))
         self.typing_input.bind(on_text_validate=self.typing_check_answer)
         card.add_widget(self.typing_input)
         card.add_widget(self.create_accent_bar())
@@ -1537,6 +1554,7 @@ class LearnMixin:
         self.typing_feedback_label.markup = True
         card.add_widget(self.typing_feedback_label)
 
+        # Self-rating buttons (ONLY used after a correct answer)
         self.typing_selfrating_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
         if self.self_rating_enabled:
             for label_name, quality in [
@@ -1550,20 +1568,23 @@ class LearnMixin:
                     size_hint=(0.25, 1),
                     font_size=sp(int(self.config_data["settings"]["gui"]["text_font_size"])),
                 )
-                btn.bind(on_press=lambda _i, q=quality: self.self_rate_card(q))
+                btn.bind(on_press=lambda _i, q=quality: self.typing_rate_answer(q))
                 self.typing_selfrating_box.add_widget(btn)
 
         self.typing_selfrating_box.opacity = 0
         self.typing_selfrating_box.disabled = True
         card.add_widget(self.typing_selfrating_box)
 
+        # Buttons row
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        check_btn = self.make_primary_button(getattr(labels, "typing_mode_check", "Check"), size_hint=(0.5, 1))
-        skip_btn = self.make_secondary_button(getattr(labels, "typing_mode_skip", "Skip"), size_hint=(0.5, 1))
-        check_btn.bind(on_press=self.typing_check_answer)
-        skip_btn.bind(on_press=self.typing_skip)
-        row.add_widget(check_btn)
-        row.add_widget(skip_btn)
+        self.typing_check_btn = self.make_primary_button(getattr(labels, "typing_mode_check", "Check"),
+                                                         size_hint=(0.5, 1))
+        self.typing_skip_btn = self.make_secondary_button(getattr(labels, "typing_mode_skip", "Skip"),
+                                                          size_hint=(0.5, 1))
+        self.typing_check_btn.bind(on_press=self.typing_check_answer)
+        self.typing_skip_btn.bind(on_press=self.typing_skip)
+        row.add_widget(self.typing_check_btn)
+        row.add_widget(self.typing_skip_btn)
         card.add_widget(row)
 
         center.add_widget(card)
@@ -1575,6 +1596,10 @@ class LearnMixin:
         if vocab is None:
             return
 
+        # If we are waiting for self-rating, ignore further checks
+        if bool(getattr(self, "_typing_waiting_self_rating", False)):
+            return
+
         user = (self.typing_input.text or "")
         if not user.strip():
             self.typing_feedback_label.text = getattr(labels, "typing_mode_empty", "Please enter an answer.")
@@ -1583,31 +1608,37 @@ class LearnMixin:
         is_correct = self._is_correct_typed_answer(user, vocab)
 
         if is_correct:
-            self._adjust_knowledge_level(vocab, getattr(labels, "knowledge_delta_typing_correct", 0.093))
-            self.update_srs(vocab, was_correct=True, quality=1.0)
+            # show feedback + require self-rating (no auto-advance!)
             self.typing_feedback_label.color = self.colors["success"]
             self.typing_feedback_label.text = getattr(labels, "typing_mode_correct", "Correct!")
+
+            # lock input/buttons
+            try:
+                self.typing_input.disabled = True
+            except Exception:
+                pass
+            for b in (getattr(self, "typing_check_btn", None), getattr(self, "typing_skip_btn", None)):
+                if b is not None:
+                    b.disabled = True
+                    b.opacity = 0.6
+
+            # enable rating UI
             self.typing_selfrating_box.disabled = False
             self.typing_selfrating_box.opacity = 1
 
-            if self._register_session_step(was_correct=True):
-                return
-            Clock.schedule_once(lambda _dt: self._advance_to_next(), 0.35)
+            self._typing_waiting_self_rating = True
+            self._typing_pending_vocab_id = id(vocab)
             return
 
-        # WRONG:
+        # WRONG: keep your existing behavior
         self._daily_goal_perfect = False
 
         expected = self._best_candidate_for_feedback(user, vocab)
-
-        # Knowledge penalty: nach echten Buchstaben-Mismatches (ohne Spaces)
         per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
         mism = self._typing_mismatch_count(user, expected)
         self._adjust_knowledge_level(vocab, per_char * max(1, mism))
-
         self.update_srs(vocab, was_correct=False, quality=0.0)
 
-        # Feedback: farbiger Input + vollständige Lösung (mit Pronomen etc.)
         self.typing_feedback_label.color = self.colors["text"]
         colored = self._typing_colored_input_markup(user, expected)
         self.typing_feedback_label.text = (
@@ -1616,6 +1647,50 @@ class LearnMixin:
             f"Lösung: {expected}"
         )
 
+    def typing_rate_answer(self, quality: str):
+        """
+        Called when the user self-rates AFTER a correct typed answer.
+        Applies typing-specific delta + SRS quality, then advances.
+        """
+        if not bool(getattr(self, "_typing_waiting_self_rating", False)):
+            return
+
+        vocab = self._get_current_vocab()
+        if vocab is None or id(vocab) != getattr(self, "_typing_pending_vocab_id", None):
+            # safety: if card changed for whatever reason
+            self._typing_waiting_self_rating = False
+            self._typing_pending_vocab_id = None
+            return
+
+        # Base typing delta
+        base = float(getattr(labels, "knowledge_delta_typing_correct", 0.093) or 0.093)
+
+        # Quality mapping (keeps typing-mode "stronger" than flashcards, but user-controlled)
+        if quality == "very_easy":
+            mult, q_val = 1.2, 1.0
+        elif quality == "easy":
+            mult, q_val = 1.0, 0.75
+        elif quality == "hard":
+            mult, q_val = 0.7, 0.4
+        else:
+            mult, q_val = 0.4, 0.1
+
+        self._adjust_knowledge_level(vocab, base * mult)
+        self.update_srs(vocab, was_correct=True, quality=q_val)
+
+        # lock rating UI (avoid double taps)
+        try:
+            self.typing_selfrating_box.disabled = True
+            self.typing_selfrating_box.opacity = 0.4
+        except Exception:
+            pass
+
+        self._typing_waiting_self_rating = False
+        self._typing_pending_vocab_id = None
+
+        if self._register_session_step(was_correct=True):
+            return
+        self._advance_to_next()
 
     def typing_skip(self, _instance=None):
         vocab = self._get_current_vocab()
@@ -1810,15 +1885,13 @@ class LearnMixin:
         if getattr(button, "disabled", False):
             return
 
-        w_i = getattr(button, "_word_index", None)
-        c_i = getattr(button, "_chunk_index", None)
-        if w_i is None or c_i is None:
-            return
-        if not (0 <= w_i < len(self.syllable_salad_items)):
-            return
+        def norm(s: str) -> str:
+            s = "" if s is None else str(s)
+            # ignore ALL whitespace, case-insensitive
+            return re.sub(r"\s+", "", s).lower()
 
-        item = self.syllable_salad_items[w_i]
-        if item["finished"]:
+        w_i = getattr(button, "_word_index", None)
+        if w_i is None or not (0 <= w_i < len(self.syllable_salad_items)):
             return
 
         wrong_delta = getattr(labels, "knowledge_delta_syllable_wrong_word", -0.05)
@@ -1826,40 +1899,61 @@ class LearnMixin:
 
         active = self.syllable_salad_active_word_index
         if active is None:
+            # choose active word by first click (as before)
             self.syllable_salad_active_word_index = w_i
             active = w_i
-        else:
-            if active != w_i:
-                # allow switching only if user clicks first chunk of another word
-                if c_i == 0 and item["next_index"] == 0:
-                    self._reset_syllable_word(active)
-                    self.syllable_salad_active_word_index = w_i
-                    active = w_i
-                else:
-                    button.set_bg_color(self.colors["danger"])
-                    self._daily_goal_perfect = False
-                    self._adjust_knowledge_level(item.get("vocab"), wrong_delta)
-                    Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
-                    return
 
-        item = self.syllable_salad_items[w_i]
-        expected = item["next_index"]
+        # active item we are currently building
+        active_item = self.syllable_salad_items[active]
+        if active_item.get("finished", False):
+            self.syllable_salad_active_word_index = None
+            return
 
-        if c_i == expected:
+        # expected chunk by position
+        exp_idx = int(active_item.get("next_index", 0) or 0)
+        if not (0 <= exp_idx < len(active_item["chunks"])):
+            return
+
+        clicked = norm(getattr(button, "text", ""))
+        expected = norm(active_item["chunks"][exp_idx])
+
+        # If user clicked a chunk from another word:
+        # 1) allow it as shared syllable if it matches expected of ACTIVE word
+        # 2) otherwise keep old "switch word only if user starts new word" behavior
+        if active != w_i and clicked != expected:
+            other_item = self.syllable_salad_items[w_i]
+            # switching allowed only when starting the other word (next_index==0) AND clicking its first chunk (text-based)
+            if int(other_item.get("next_index", 0) or 0) == 0 and norm(other_item["chunks"][0]) == clicked:
+                self._reset_syllable_word(active)
+                self.syllable_salad_active_word_index = w_i
+                active = w_i
+                active_item = self.syllable_salad_items[active]
+                exp_idx = int(active_item.get("next_index", 0) or 0)
+                expected = norm(active_item["chunks"][exp_idx])
+            else:
+                button.set_bg_color(self.colors["danger"])
+                self._daily_goal_perfect = False
+                self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
+                Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
+                return
+
+        # NOW: correctness is TEXT-based (so duplicates are interchangeable)
+        if clicked == expected:
             button.set_bg_color(self.colors["success"])
             button.disabled = True
-            item["next_index"] += 1
-            item["built"] += button.text
 
-            lbl = item["label"]
-            lbl.text = item["base_text"] + item["built"]
+            active_item["next_index"] = exp_idx + 1
+            active_item["built"] += (button.text or "")
+
+            lbl = active_item["label"]
+            lbl.text = active_item["base_text"] + active_item["built"]
             lbl.markup = True
 
-            if item["next_index"] >= len(item["chunks"]):
-                item["finished"] = True
+            if active_item["next_index"] >= len(active_item["chunks"]):
+                active_item["finished"] = True
                 self.syllable_salad_finished_count += 1
                 lbl.color = self.colors["success"]
-                self._adjust_knowledge_level(item.get("vocab"), correct_delta)
+                self._adjust_knowledge_level(active_item.get("vocab"), correct_delta)
                 self.syllable_salad_active_word_index = None
 
                 if self.syllable_salad_finished_count >= len(self.syllable_salad_items):
@@ -1867,7 +1961,7 @@ class LearnMixin:
         else:
             button.set_bg_color(self.colors["danger"])
             self._daily_goal_perfect = False
-            self._adjust_knowledge_level(item.get("vocab"), wrong_delta)
+            self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
             Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
 
     def _syllable_salad_finish(self):

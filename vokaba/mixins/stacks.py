@@ -186,16 +186,31 @@ class StacksMixin:
         vocab_root = self.vocab_root()
         src = os.path.join(vocab_root, stack)
 
-        # Android: IMMER teilen (Share Sheet), nie Save-As / nie Kivy-Chooser
+        # Android: IMMER teilen (Share Sheet)
         if kivy_platform == "android":
+            ok = False
             try:
-                if hasattr(self, "run_share_file_dialog") and self.run_share_file_dialog(
-                        src, mime_type="text/csv", title="Stapel exportieren"
-                ):
-                    return
+                if hasattr(self, "run_share_file_dialog"):
+                    ok = bool(self.run_share_file_dialog(src, mime_type="text/csv", title="Stapel exportieren"))
             except Exception as e:
                 log(f"android share export failed: {e}")
-            return  # auf Android hier stoppen (kein Kivy-Chooser-Fallback)
+                ok = False
+
+            if not ok:
+                Popup(
+                    title="Export fehlgeschlagen",
+                    content=self.make_text_label(
+                        "Der Share-Dialog konnte nicht geöffnet werden.\n\n"
+                        "Check: Buildozer requirements sollte mindestens enthalten:\n"
+                        "  python3,kivy,pyjnius,plyer\n\n"
+                        "Und auf manchen Geräten braucht File-Sharing einen FileProvider.\n"
+                        "(Wenn du willst, sag mir dein buildozer.spec, dann gebe ich dir den minimalen Manifest-Block.)",
+                        halign="center",
+                    ),
+                    size_hint=(0.85, None),
+                    height=dp(320),
+                ).open()
+            return
 
         # Desktop: Speichern unter…
         def copy_to(selection):
