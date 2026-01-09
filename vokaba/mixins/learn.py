@@ -1427,6 +1427,93 @@ class LearnMixin:
                 return True
         return False
 
+    def _rgba_to_hex(self, rgba) -> str:
+        try:
+            r, g, b = rgba[0], rgba[1], rgba[2]
+            return f"{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+        except Exception:
+            return "ffffff"
+
+    def _typing_candidates(self, vocab: dict) -> list[str]:
+        foreign = vocab.get("foreign_language", "") or ""
+        parts = re.split(r"[;,/]", foreign)
+        cands = [p.strip() for p in parts if p.strip()]
+        return cands or [foreign.strip()]
+
+    def _best_candidate_for_feedback(self, typed: str, vocab: dict) -> str:
+        """
+        Wählt den Kandidaten, der am ähnlichsten zum User-Input ist,
+        damit Feedback sinnvoll ist.
+        """
+        typed_norm = self._normalize_for_compare(typed)
+        cands = self._typing_candidates(vocab)
+        if not typed_norm:
+            return cands[0]
+
+        try:
+            import difflib
+            best = cands[0]
+            best_score = -1.0
+            for c in cands:
+                score = difflib.SequenceMatcher(None, typed_norm, self._normalize_for_compare(c)).ratio()
+                if score > best_score:
+                    best_score = score
+                    best = c
+            return best
+        except Exception:
+            return cands[0]
+
+    def _typing_mismatch_count(self, typed: str, expected: str) -> int:
+        a = self._normalize_for_compare(typed)
+        b = self._normalize_for_compare(expected)
+        n = min(len(a), len(b))
+        mism = sum(1 for i in range(n) if a[i] != b[i])
+        mism += abs(len(a) - len(b))
+        return int(mism)
+
+    def _typing_colored_input_markup(self, typed: str, expected: str) -> str:
+        """
+        Markup für User-Input:
+          - Buchstaben werden positionsweise mit expected_norm verglichen
+          - Leerzeichen/Punktuation werden neutral dargestellt
+          - Inhalt in (...) wird ignoriert (neutral), wie bisher
+        """
+        ok_hex = self._rgba_to_hex(self.colors.get("success", (0.2, 0.7, 0.3, 1)))
+        bad_hex = self._rgba_to_hex(self.colors.get("danger", (0.9, 0.22, 0.21, 1)))
+        neutral_hex = self._rgba_to_hex(self.colors.get("text", (1, 1, 1, 1)))
+
+        exp_norm = self._normalize_for_compare(expected)
+        exp_i = 0
+
+        out = []
+        in_parens = False
+
+        for ch in (typed or ""):
+            if ch == "(":
+                in_parens = True
+                out.append(f"[color={neutral_hex}]{ch}[/color]")
+                continue
+            if ch == ")":
+                in_parens = False
+                out.append(f"[color={neutral_hex}]{ch}[/color]")
+                continue
+
+            # Neutral: spaces / punctuation / parentheses-content
+            if in_parens or (not ch.isalpha()):
+                out.append(f"[color={neutral_hex}]{ch}[/color]")
+                continue
+
+            # Letter: compare to expected normalized letter stream
+            user_letter = self._strip_accents(ch).lower()
+            if exp_i < len(exp_norm) and user_letter == exp_norm[exp_i]:
+                out.append(f"[color={ok_hex}]{ch}[/color]")
+            else:
+                out.append(f"[color={bad_hex}]{ch}[/color]")
+
+            exp_i += 1
+
+        return "".join(out)
+
     def typing_mode(self):
         self.learn_content.clear_widgets()
         vocab = self._get_current_vocab()
@@ -1487,12 +1574,14 @@ class LearnMixin:
         vocab = self._get_current_vocab()
         if vocab is None:
             return
+
         user = (self.typing_input.text or "")
         if not user.strip():
             self.typing_feedback_label.text = getattr(labels, "typing_mode_empty", "Please enter an answer.")
             return
 
         is_correct = self._is_correct_typed_answer(user, vocab)
+
         if is_correct:
             self._adjust_knowledge_level(vocab, getattr(labels, "knowledge_delta_typing_correct", 0.093))
             self.update_srs(vocab, was_correct=True, quality=1.0)
@@ -1504,16 +1593,29 @@ class LearnMixin:
             if self._register_session_step(was_correct=True):
                 return
             Clock.schedule_once(lambda _dt: self._advance_to_next(), 0.35)
-        else:
-            self._daily_goal_perfect = False
-            per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
-            self._adjust_knowledge_level(vocab, per_char * len(user.strip()))
-            self.update_srs(vocab, was_correct=False, quality=0.0)
-            self.typing_feedback_label.color = self.colors["text"]
-            self.typing_feedback_label.text = (
-                f"{getattr(labels, 'typing_mode_wrong', 'Not quite. Correct answer:')}\n"
-                f"{self._extract_main_lexeme(vocab.get('foreign_language', '') or '')}"
-            )
+            return
+
+        # WRONG:
+        self._daily_goal_perfect = False
+
+        expected = self._best_candidate_for_feedback(user, vocab)
+
+        # Knowledge penalty: nach echten Buchstaben-Mismatches (ohne Spaces)
+        per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
+        mism = self._typing_mismatch_count(user, expected)
+        self._adjust_knowledge_level(vocab, per_char * max(1, mism))
+
+        self.update_srs(vocab, was_correct=False, quality=0.0)
+
+        # Feedback: farbiger Input + vollständige Lösung (mit Pronomen etc.)
+        self.typing_feedback_label.color = self.colors["text"]
+        colored = self._typing_colored_input_markup(user, expected)
+        self.typing_feedback_label.text = (
+            f"{getattr(labels, 'typing_mode_wrong', 'Not quite. Correct answer:')}\n"
+            f"Dein Input: {colored}\n"
+            f"Lösung: {expected}"
+        )
+
 
     def typing_skip(self, _instance=None):
         vocab = self._get_current_vocab()
@@ -1541,8 +1643,11 @@ class LearnMixin:
                 continue
             if in_parens:
                 continue
+            # Whitespace raus (fix: "un " != "un")
+            if ch.isspace():
+                continue
             out.append(ch)
-        return "".join(out)
+        return "".join(out).strip()
 
     def _split_into_syllable_chunks(self, cleaned: str):
         cleaned = cleaned or ""

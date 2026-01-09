@@ -112,17 +112,27 @@ class AddStackMixin:
                 i += 1
             return candidate
 
-        def do_import(src: str):
-            if not src:
+        def do_import(src_raw: str):
+            if not src_raw:
                 return
             try:
-                name = os.path.basename(src)
+                name = os.path.basename(str(src_raw))
                 if not name.lower().endswith(".csv"):
                     name += ".csv"
                 dest = unique_dest(os.path.join(vocab_root, name))
-                shutil.copy2(src, dest)
-                log(f"Imported stack: {src} -> {dest}")
-                self.main_menu()
+
+                ok = False
+                if hasattr(self, "copy_any_to_file"):
+                    ok = self.copy_any_to_file(src_raw, dest)
+                else:
+                    shutil.copy2(src_raw, dest)
+                    ok = True
+
+                if ok:
+                    log(f"Imported stack: {src_raw} -> {dest}")
+                    self.main_menu()
+                else:
+                    raise RuntimeError("copy failed")
             except Exception as e:
                 log(f"Import failed: {e}")
                 self.add_stack_error_label.text = getattr(labels, "import_failed", "Fehler beim Import")
@@ -133,19 +143,31 @@ class AddStackMixin:
                 do_import(selection[0])
 
         try:
-            if hasattr(self, "run_open_file_dialog") and self.run_open_file_dialog(on_sel, filters=["*.csv"], title="CSV importieren"):
+            if hasattr(self, "run_open_file_dialog") and self.run_open_file_dialog(
+                    on_sel, filters=["*.csv"], title="CSV importieren"
+            ):
                 return
         except Exception as e:
             log(f"System open dialog failed, fallback: {e}")
 
-        # 2) Fallback: Kivy FileChooser
+        # Android: KEIN Kivy-Chooser-Fallback
+        if kivy_platform == "android":
+            self.add_stack_error_label.text = (
+                "Auf Android muss der System-Dateiauswahldialog aufgehen.\n"
+                "Wenn nicht: 'plyer' fehlt im Build (requirements)."
+            )
+            return
+
+        # 2) Desktop-Fallback: Kivy FileChooser
         chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=False, filters=["*.csv"])
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
         content.add_widget(chooser)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
-        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"), size_hint=(0.5, 1))
-        ok_btn = self.make_primary_button(getattr(labels, "stack_import_button_text", "Importieren …"), size_hint=(0.5, 1))
+        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"),
+                                                size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button(getattr(labels, "stack_import_button_text", "Importieren …"),
+                                          size_hint=(0.5, 1))
         row.add_widget(cancel_btn)
         row.add_widget(ok_btn)
         content.add_widget(row)
@@ -155,7 +177,7 @@ class AddStackMixin:
         def _ok(*_a):
             if chooser.selection:
                 do_import(chooser.selection[0])
-                popup.dismiss()
+            popup.dismiss()
 
         ok_btn.bind(on_press=_ok)
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())

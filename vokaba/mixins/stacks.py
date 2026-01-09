@@ -186,18 +186,18 @@ class StacksMixin:
         vocab_root = self.vocab_root()
         src = os.path.join(vocab_root, stack)
 
-        # Android: System-Teilen (Share Sheet)
-        if kivy_platform == "android" and plyer_share is not None:
+        # Android: IMMER teilen (Share Sheet), nie Save-As / nie Kivy-Chooser
+        if kivy_platform == "android":
             try:
-                # je nach Plyer-Version:
-                try:
-                    plyer_share.share(filepath=src, mime_type="text/csv", title="Stapel exportieren")
-                except TypeError:
-                    plyer_share.share(filepath=src, title="Stapel exportieren")
-                return
+                if hasattr(self, "run_share_file_dialog") and self.run_share_file_dialog(
+                        src, mime_type="text/csv", title="Stapel exportieren"
+                ):
+                    return
             except Exception as e:
-                log(f"share export failed, fallback to dialogs: {e}")
+                log(f"android share export failed: {e}")
+            return  # auf Android hier stoppen (kein Kivy-Chooser-Fallback)
 
+        # Desktop: Speichern unter…
         def copy_to(selection):
             if not selection:
                 return
@@ -212,30 +212,32 @@ class StacksMixin:
             except Exception as e:
                 log(f"export failed: {e}")
 
-        # Desktop: System-"Speichern unter…" (Tk), falls verfügbar
         try:
             if hasattr(self, "run_save_file_dialog") and self.run_save_file_dialog(
-                copy_to,
-                default_filename=os.path.basename(stack),
-                title="Stapel exportieren",
+                    copy_to,
+                    default_filename=os.path.basename(stack),
+                    title="Stapel exportieren",
             ):
                 return
         except Exception as e:
             log(f"native save dialog failed, fallback: {e}")
 
-        # Fallback: Kivy Verzeichnis-Auswahl
+        # Desktop-Fallback: Kivy Verzeichnis-Auswahl
         chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=True)
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
         content.add_widget(chooser)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
-        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"), size_hint=(0.5, 1))
-        ok_btn = self.make_primary_button(getattr(labels, "stack_export_button_text", "Exportieren …"), size_hint=(0.5, 1))
+        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"),
+                                                size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button(getattr(labels, "stack_export_button_text", "Exportieren …"),
+                                          size_hint=(0.5, 1))
         row.add_widget(cancel_btn)
         row.add_widget(ok_btn)
         content.add_widget(row)
 
-        popup = Popup(title=getattr(labels, "stack_export_popup_title", "Stapel exportieren"), content=content, size_hint=(0.9, 0.9))
+        popup = Popup(title=getattr(labels, "stack_export_popup_title", "Stapel exportieren"), content=content,
+                      size_hint=(0.9, 0.9))
 
         def do_export(*_a):
             target_dir = chooser.path
@@ -254,45 +256,89 @@ class StacksMixin:
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
 
-
     def import_stack_dialog(self, stack: str, _instance=None):
         vocab_root = self.vocab_root()
         target = os.path.join(vocab_root, stack)
 
-        # 1) System dialog (plyer) if available
-        if plyer_filechooser is not None:
-            def on_sel(selection):
-                if not selection:
-                    return
-                src = selection[0]
-                try:
-                    if os.path.exists(target):
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        shutil.copy2(target, target + f".backup_{ts}")
-                    shutil.copy2(src, target)
-                    self.select_stack(stack)
-                except Exception as e:
-                    log(f"import (plyer) failed: {e}")
-
-            try:
-                plyer_filechooser.open_file(on_selection=on_sel, filters=["*.csv"])
+        def do_import(src_raw: str):
+            if not src_raw:
                 return
-            except Exception as e:
-                log(f"plyer dialog failed, fallback to kivy chooser: {e}")
+            src = src_raw
+            try:
+                if os.path.exists(target):
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    shutil.copy2(target, target + f".backup_{ts}")
+            except Exception:
+                pass
 
-        # 2) Fallback: Kivy chooser
+            ok = False
+            try:
+                if hasattr(self, "copy_any_to_file"):
+                    ok = self.copy_any_to_file(src, target)
+                else:
+                    shutil.copy2(src, target)
+                    ok = True
+            except Exception as e:
+                log(f"import failed: {e}")
+                ok = False
+
+            if ok:
+                self.select_stack(stack)
+
+        # 1) System-Dialog (Android Picker / Desktop Öffnen)
+        def on_sel(selection):
+            if selection:
+                do_import(selection[0])
+
+        try:
+            if hasattr(self, "run_open_file_dialog") and self.run_open_file_dialog(
+                    on_sel, filters=["*.csv"], title="CSV importieren"
+            ):
+                return
+        except Exception as e:
+            log(f"System open dialog failed: {e}")
+
+        # Android: KEIN Kivy-Chooser-Fallback (da unbrauchbar)
+        if kivy_platform == "android":
+            popup = Popup(
+                title="Import nicht möglich",
+                content=self.make_text_label(
+                    "Auf Android braucht der Import den System-Dateiauswahldialog.\n"
+                    "Wenn der nicht aufgeht, fehlt meist 'plyer' im Build (requirements).",
+                    halign="center",
+                ),
+                size_hint=(0.85, None),
+                height=dp(220),
+            )
+            popup.open()
+            return
+
+        # Desktop-Fallback: Kivy chooser
         chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=False, filters=["*.csv"])
         content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
         content.add_widget(chooser)
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
-        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"), size_hint=(0.5, 1))
-        ok_btn = self.make_primary_button(getattr(labels, "stack_import_button_text", "Importieren …"), size_hint=(0.5, 1))
+        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"),
+                                                size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button(getattr(labels, "stack_import_button_text", "Importieren …"),
+                                          size_hint=(0.5, 1))
         row.add_widget(cancel_btn)
         row.add_widget(ok_btn)
         content.add_widget(row)
 
-        popup = Popup(title=getattr(labels, "stack_import_popup_title", "CSV importieren"), content=content, size_hint=(0.9, 0.9))
+        popup = Popup(title=getattr(labels, "stack_import_popup_title", "CSV importieren"), content=content,
+                      size_hint=(0.9, 0.9))
+
+        def _ok(*_a):
+            if chooser.selection:
+                do_import(chooser.selection[0])
+            popup.dismiss()
+
+        ok_btn.bind(on_press=_ok)
+        cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
+        popup.open()
+
 
         def do_import(*_a):
             if not chooser.selection:

@@ -1,4 +1,5 @@
 import os
+import shutil
 from kivy.metrics import dp, sp
 from kivy.core.window import Window
 from kivy.clock import Clock
@@ -17,6 +18,12 @@ try:
     from plyer import filechooser as plyer_filechooser
 except Exception:
     plyer_filechooser = None
+
+try:
+    from plyer import share as plyer_share
+except Exception:
+    plyer_share = None
+
 
 class UIFactoryMixin:
     """
@@ -213,8 +220,15 @@ class UIFactoryMixin:
         spn.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
         spn.halign = "center"
         spn.valign = "middle"
-        spn.text_size = (spn.width, None)
         spn.padding = [dp(10), dp(10)]
+
+        # WICHTIG: text_size dynamisch an echte Widget-Breite binden (sonst Wrap bei Resize)
+        def _update_text_size(_inst, size):
+            spn.text_size = (max(0, size[0] - dp(20)), None)
+
+        spn.bind(size=_update_text_size)
+        _update_text_size(spn, spn.size)
+
         return spn
 
     def make_language_spinner(self, default: str = "Deutsch", *, allow_custom: bool = True, **kwargs) -> Spinner:
@@ -371,6 +385,196 @@ class UIFactoryMixin:
                 pass
 
         return False
+
+
+    def _normalize_picker_path(self, s: str) -> str:
+        """
+        plyer/filechooser kann je nach Android-Version zurückgeben:
+          - /storage/... (normal)
+          - file:///storage/...
+          - content://...
+        """
+        if not s:
+            return ""
+        s = str(s).strip()
+        if s.startswith("file://"):
+            s = s[7:]
+        return s
+
+    def _android_copy_content_uri_to_file(self, uri_str: str, dest_path: str) -> bool:
+        """
+        Kopiert content://... via ContentResolver in eine echte Datei (dest_path).
+        Funktioniert ohne dass die App Ordner browsen können muss.
+        """
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+            Uri = autoclass("android.net.Uri")
+            BufferedInputStream = autoclass("java.io.BufferedInputStream")
+            BufferedOutputStream = autoclass("java.io.BufferedOutputStream")
+            FileOutputStream = autoclass("java.io.FileOutputStream")
+            ByteArray = autoclass("[B")
+        except Exception:
+            return False
+
+        try:
+            os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+            uri = Uri.parse(uri_str)
+            cr = activity.getContentResolver()
+            ins = cr.openInputStream(uri)
+            if ins is None:
+                return False
+
+            bis = BufferedInputStream(ins)
+            fos = FileOutputStream(dest_path)
+            bos = BufferedOutputStream(fos)
+
+            buf = ByteArray(16 * 1024)
+            while True:
+                n = bis.read(buf)
+                if n <= 0:
+                    break
+                bos.write(buf, 0, n)
+
+            bos.flush()
+            try:
+                bos.close()
+            except Exception:
+                pass
+            try:
+                bis.close()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            try:
+                bos.close()
+            except Exception:
+                pass
+            try:
+                bis.close()
+            except Exception:
+                pass
+            return False
+
+    def copy_any_to_file(self, src: str, dest: str) -> bool:
+        """
+        Cross-platform copy:
+          - normal path: shutil.copy2
+          - android content:// : ContentResolver copy
+        """
+        src = self._normalize_picker_path(src)
+        if not src or not dest:
+            return False
+
+        if kivy_platform == "android" and src.startswith("content://"):
+            return self._android_copy_content_uri_to_file(src, dest)
+
+        try:
+            os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+            shutil.copy2(src, dest)
+            return True
+        except Exception:
+            return False
+
+    def _android_share_file_intent(self, filepath: str, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
+        """
+        Share-Sheet via Android Intent.
+        Versucht FileProvider (androidx / support). Fallback: Text teilen.
+        """
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+
+            Intent = autoclass("android.content.Intent")
+            File = autoclass("java.io.File")
+            Uri = autoclass("android.net.Uri")
+        except Exception:
+            return False
+
+        file_obj = File(filepath)
+        uri = None
+
+        # 1) FileProvider (best)
+        FileProvider = None
+        try:
+            FileProvider = autoclass("androidx.core.content.FileProvider")
+        except Exception:
+            try:
+                FileProvider = autoclass("android.support.v4.content.FileProvider")
+            except Exception:
+                FileProvider = None
+
+        if FileProvider is not None:
+            pkg = activity.getApplicationContext().getPackageName()
+            for suffix in (".fileprovider", ".provider"):
+                try:
+                    uri = FileProvider.getUriForFile(activity, pkg + suffix, file_obj)
+                    break
+                except Exception:
+                    uri = None
+
+        # 2) Last resort: file:// (kann auf Android 7+ knallen, deshalb try/except)
+        if uri is None:
+            try:
+                uri = Uri.fromFile(file_obj)
+            except Exception:
+                uri = None
+
+        # 3) Intent bauen
+        try:
+            if uri is not None:
+                intent = Intent(Intent.ACTION_SEND)
+                intent.setType(mime_type or "*/*")
+                intent.putExtra(Intent.EXTRA_STREAM, uri)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                chooser = Intent.createChooser(intent, title)
+                activity.startActivity(chooser)
+                return True
+        except Exception:
+            pass
+
+        # Fallback: als Text teilen (Share-Sheet ist dann sicher da, aber ohne Datei-Anhang)
+        try:
+            try:
+                txt = open(filepath, "r", encoding="utf-8").read()
+            except Exception:
+                txt = filepath
+            intent = Intent(Intent.ACTION_SEND)
+            intent.setType("text/plain")
+            intent.putExtra(Intent.EXTRA_TEXT, txt)
+            chooser = Intent.createChooser(intent, title)
+            activity.startActivity(chooser)
+            return True
+        except Exception:
+            return False
+
+    def run_share_file_dialog(self, filepath: str, *, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
+        """
+        Android: Share-Sheet (kein "Speichern unter")
+        Desktop: False (da nutzt du weiterhin run_save_file_dialog).
+        """
+        if not filepath:
+            return False
+
+        if kivy_platform != "android":
+            return False
+
+        # 1) plyer.share, wenn vorhanden
+        if plyer_share is not None:
+            try:
+                try:
+                    plyer_share.share(filepath=filepath, mime_type=mime_type, title=title)
+                except TypeError:
+                    plyer_share.share(filepath=filepath, title=title)
+                return True
+            except Exception:
+                pass
+
+        # 2) Intent fallback
+        return self._android_share_file_intent(filepath, mime_type=mime_type, title=title)
 
 
     def create_accent_bar(self):
