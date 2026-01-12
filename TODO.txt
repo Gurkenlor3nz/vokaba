@@ -13,3 +13,14 @@ Andriod app (vllt. Buildozer)
 important before release:
 beim silben modus, sollte man wenn man 2 mal das gleiche hat, beide für beides nehmen können, dabei sollten leerzeichen ignoriert werden
 share passiert nicht, beim exportieren passiert beim tablet einfach nichts, beim import crasht es sogar. PC geht alles sauber
+Sprachenspezifisches Lernen und sortieren, suche nach stapeln, filter nach stapeln
+Einstellung für Selbstbewertung skip bei Eingabe, dann einf, schwer, ganz schwer bei 1,2,3 Fehlversuchen 
+leerzeichen bei angezeigtes wort bei tippen und Silben weg
+mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
+beim buchstabieren müssen Leerzeichen auch Felder sein
+
+
+
+
+
+PVP gegen andere
