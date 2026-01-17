@@ -11,5 +11,6 @@ Ki für vokabel erkennung
 Andriod app (vllt. Buildozer)
 
 important before release:
-beim silben modus, sollte man wenn man 2 mal das gleiche hat, beide für beides nehmen können, dabei sollten leerzeichen ignoriert werden
 share passiert nicht, beim exportieren passiert beim tablet einfach nichts, beim import crasht es sogar. PC geht alles sauber
+leerteichen werden beim silben-modus nicht angezeigt, wenn man das fertige wort hat. das leerzeichen sollte zwar beim check ignoriert werden,
+aber es sollte angezeigt werden.
