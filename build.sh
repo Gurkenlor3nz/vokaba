@@ -17,17 +17,12 @@ if [ -z "${DOCS_DIR:-}" ] || [ ! -d "$DOCS_DIR" ]; then
   DOCS_DIR="$REAL_HOME/Dokumente"
 fi
 
-REAL_USER="${SUDO_USER:-$USER}"
-REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
-OUTBASE="$REAL_HOME/Dokumente/Vokaba-releases"
-
+OUTBASE="$DOCS_DIR/Vokaba-releases"
 
 WEBSITE="https://vokaba.firecast.de"
 
-
-APPDIR=""
-DEBDIR=""
-
+APPDIR="AppDir"
+DEBDIR="deb-build"
 
 # Docker (Android)
 DOCKER_IMAGE="kivy/buildozer:latest"   # alternativ: ghcr.io/kivy/buildozer:latest (steht auch in der Doku) :contentReference[oaicite:3]{index=3}
@@ -92,10 +87,6 @@ PY
 )" || { echo "❌ __version__ not found in main.py"; exit 1; }
 
 OUTDIR="$OUTBASE/vokaba-$VERSION"
-
-APPDIR="$OUTDIR/AppDir"
-DEBDIR="$OUTDIR/deb-build"
-
 
 # Clean (Projekt-Artefakte)
 rm -rf "$OUTDIR" "$APPDIR" "$DEBDIR" build dist venv build-win dist-win
@@ -213,9 +204,6 @@ build_android_docker() {
     echo "==> Docker Buildozer: android $mode (APK)"
     LOG="$OUTDIR/buildozer-docker-android-$mode-apk.log"
     set +e
-
-    REAL_USER="${SUDO_USER:-$USER}"
-
     docker run --rm \
       -v "$PWD":/home/user/hostcwd \
       -v "$DOCKER_BUILDOZER_CACHE":/home/user/.buildozer \
@@ -234,9 +222,6 @@ build_android_docker() {
     echo "==> Docker Buildozer: android $mode aab (AAB)"
     LOG="$OUTDIR/buildozer-docker-android-$mode-aab.log"
     set +e
-
-    REAL_USER="${SUDO_USER:-$USER}"
-
     docker run --rm \
       -v "$PWD":/home/user/hostcwd \
       -v "$DOCKER_BUILDOZER_CACHE":/home/user/.buildozer \
