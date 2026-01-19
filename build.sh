@@ -28,9 +28,6 @@ WEBSITE="https://vokaba.firecast.de"
 APPDIR=""
 DEBDIR=""
 
-APPDIR="$OUTDIR/AppDir"
-DEBDIR="$OUTDIR/deb-build"
-
 
 # Docker (Android)
 DOCKER_IMAGE="kivy/buildozer:latest"   # alternativ: ghcr.io/kivy/buildozer:latest (steht auch in der Doku) :contentReference[oaicite:3]{index=3}
