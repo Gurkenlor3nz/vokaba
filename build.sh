@@ -17,12 +17,16 @@ if [ -z "${DOCS_DIR:-}" ] || [ ! -d "$DOCS_DIR" ]; then
   DOCS_DIR="$REAL_HOME/Dokumente"
 fi
 
-OUTBASE="$DOCS_DIR/Vokaba-releases"
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+OUTBASE="$REAL_HOME/Dokumente/Vokaba-releases"
+
 
 WEBSITE="https://vokaba.firecast.de"
 
-APPDIR="AppDir"
-DEBDIR="deb-build"
+APPDIR="$OUTDIR/AppDir"
+DEBDIR="$OUTDIR/deb-build"
+
 
 # Docker (Android)
 DOCKER_IMAGE="kivy/buildozer:latest"   # alternativ: ghcr.io/kivy/buildozer:latest (steht auch in der Doku) :contentReference[oaicite:3]{index=3}
