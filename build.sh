@@ -24,6 +24,10 @@ OUTBASE="$REAL_HOME/Dokumente/Vokaba-releases"
 
 WEBSITE="https://vokaba.firecast.de"
 
+
+APPDIR=""
+DEBDIR=""
+
 APPDIR="$OUTDIR/AppDir"
 DEBDIR="$OUTDIR/deb-build"
 
@@ -91,6 +95,10 @@ PY
 )" || { echo "❌ __version__ not found in main.py"; exit 1; }
 
 OUTDIR="$OUTBASE/vokaba-$VERSION"
+
+APPDIR="$OUTDIR/AppDir"
+DEBDIR="$OUTDIR/deb-build"
+
 
 # Clean (Projekt-Artefakte)
 rm -rf "$OUTDIR" "$APPDIR" "$DEBDIR" build dist venv build-win dist-win
