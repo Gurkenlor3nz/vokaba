@@ -12,19 +12,33 @@ WEBSITE="https://vokaba.firecast.de"
 APPDIR="AppDir"
 DEBDIR="deb-build"
 
+# -------------------------------------------------
+# Args (robust: funktioniert auch ohne args!)
+# -------------------------------------------------
 SKIP_APPIMAGE=0
 SKIP_DEB=0
 SKIP_SRC=0
 
-for arg in "${@:-}"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --skip-appimage) SKIP_APPIMAGE=1 ;;
     --skip-deb)      SKIP_DEB=1 ;;
     --skip-src)      SKIP_SRC=1 ;;
-    *) echo "Unknown arg: $arg"; exit 2 ;;
+    -h|--help)
+      echo "Usage: ./build.sh [--skip-appimage] [--skip-deb] [--skip-src]"
+      exit 0
+      ;;
+    *)
+      echo "Unknown arg: $1"
+      exit 2
+      ;;
   esac
+  shift
 done
 
+# -------------------------------------------------
+# Version auslesen
+# -------------------------------------------------
 echo "==> Reading version"
 VERSION="$(python3 - <<'PY'
 import re
@@ -37,10 +51,11 @@ with open("main.py", encoding="utf-8") as f:
                 raise SystemExit(0)
 raise SystemExit(1)
 PY
-)" || { echo "❌ __version__ not found"; exit 1; }
+)" || { echo "❌ __version__ not found in main.py"; exit 1; }
 
 OUTDIR="$OUTBASE/vokaba-$VERSION"
 
+# Clean
 rm -rf "$OUTDIR" "$APPDIR" "$DEBDIR" build dist venv build-win dist-win
 mkdir -p "$OUTDIR"
 
@@ -62,9 +77,7 @@ exclude_dirs = {
   "build", "dist", "build-win", "dist-win",
   "AppDir", "deb-build"
 }
-exclude_files = {
-  "appimagetool.AppImage",
-}
+exclude_files = {"appimagetool.AppImage"}
 
 def should_exclude(path):
   rel = os.path.relpath(path, root)
@@ -79,14 +92,12 @@ def should_exclude(path):
 
 with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
   for dirpath, dirnames, filenames in os.walk(root):
-    # prune excluded dirs
     dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
     for fn in filenames:
       p = os.path.join(dirpath, fn)
       if should_exclude(p):
         continue
-      rel = os.path.relpath(p, root)
-      z.write(p, rel)
+      z.write(p, os.path.relpath(p, root))
 
 print(out)
 PY
@@ -134,7 +145,7 @@ exec "\$HERE/usr/bin/$APP"
 EOF
   chmod +x "$APPDIR/AppRun"
 
-  # Desktop
+  # Desktop-Datei
   cat > "$APPDIR/$APP.desktop" <<EOF
 [Desktop Entry]
 Type=Application
@@ -146,13 +157,15 @@ Terminal=false
 X-Website=$WEBSITE
 EOF
 
+  # Icons
   cp "$ICON" "$APPDIR/$APP.png"
   cp "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP.png"
 
-  # optional runtime libs
+  # Optional runtime libs
   cp -n /usr/lib/x86_64-linux-gnu/libGL.so*  "$APPDIR/usr/lib/" 2>/dev/null || true
   cp -n /usr/lib/x86_64-linux-gnu/libEGL.so* "$APPDIR/usr/lib/" 2>/dev/null || true
 
+  # appimagetool
   TOOL="$PWD/appimagetool.AppImage"
   if [ ! -f "$TOOL" ]; then
     wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O "$TOOL"
@@ -161,13 +174,17 @@ EOF
 
   TMPDIR="$(mktemp -d)"
   cp -a "$APPDIR" "$TMPDIR/AppDir"
+
   (
     cd "$TMPDIR"
     ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" AppDir
   )
 
   GEN="$(find "$TMPDIR" -maxdepth 1 -type f -name '*.AppImage' -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
-  [ -f "$GEN" ] || { echo "❌ AppImage not found"; exit 1; }
+  if [ -z "${GEN:-}" ] || [ ! -f "$GEN" ]; then
+    echo "❌ Could not find generated AppImage in $TMPDIR"
+    exit 1
+  fi
 
   APPIMAGE_OUT="$OUTDIR/vokaba-$VERSION-x86_64.AppImage"
   mv -f "$GEN" "$APPIMAGE_OUT"
@@ -221,5 +238,5 @@ EOF
 fi
 
 echo
-echo "✅ Linux build finished"
+echo "✅ Build finished"
 echo "📦 Output in: $OUTDIR"
