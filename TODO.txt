@@ -19,6 +19,8 @@ leerzeichen bei angezeigtes wort bei tippen und Silben weg
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 beim buchstabieren müssen Leerzeichen auch Felder sein
 
+update, ohne alle dateien zu verlieren bei android
+export button fixen
 
 
 
