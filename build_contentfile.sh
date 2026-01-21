@@ -19,6 +19,9 @@ EXCLUDES=(
   "env"
   "build"
   "dist"
+  "AppDir"
+  ".github"
+  "*.AppImage"
 )
 
 # Erzeuge eine find-Filterkette
