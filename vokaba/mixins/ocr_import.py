@@ -23,8 +23,12 @@ from kivy.uix.progressbar import ProgressBar
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
+from kivy.core.window import Window
+from kivy.uix.widget import Widget
+
 
 import save
+import labels
 from vokaba.core.logging_utils import log
 from vokaba.core.paths import data_dir
 from vokaba.ui.widgets.rounded import RoundedCard
@@ -55,6 +59,52 @@ class OcrImportMixin:
         self._ocr_cancel_token = object()
         self._ocr_setup_screen()
 
+    def _ocr_guess_paddle_lang(self, stack_file: str) -> str:
+        """
+        Server supports only 'german' and 'en' (no 'latin').
+        - If any language is unknown/custom -> 'en'
+        - If German is involved -> 'german'
+        - Otherwise -> 'en'
+        """
+        try:
+            own, foreign, latin, latin_active = save.read_languages(stack_file)
+        except Exception:
+            return "en"
+
+        langs = []
+        for x in (own, foreign, latin if latin_active else None):
+            if x and str(x).strip():
+                langs.append(str(x).strip())
+
+        if not langs:
+            return "en"
+
+        def norm(s: str) -> str:
+            s = re.sub(r"\s+", " ", str(s)).strip().lower()
+            # normalize umlauts
+            s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+            return s
+
+        known = {
+            "deutsch": "german",
+            "englisch": "en",
+            "english": "en",
+            "german": "german",
+        }
+
+        mapped = []
+        for name in langs:
+            k = norm(name)
+            if k not in known:
+                return "en"  # custom/unknown -> english fallback
+            mapped.append(known[k])
+
+        # If any german appears, prefer german model
+        if "german" in mapped:
+            return "german"
+
+        return "en"
+
     # -------------------------
     # Screen 1: setup
     # -------------------------
@@ -63,6 +113,9 @@ class OcrImportMixin:
         stack = getattr(self, "_ocr_stack", None)
         if not stack:
             return
+
+        self._ocr_review_active = False
+        self._unbind_ocr_review_keys()
 
         self.window.clear_widgets()
         pad_mul = float(self.config_data["settings"]["gui"]["padding_multiplicator"])
@@ -95,13 +148,6 @@ class OcrImportMixin:
         form = BoxLayout(orientation="vertical", spacing=dp(12), padding=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        hint = (
-            "1) Bild auswählen (JPG/PNG)\n"
-            "2) Spalten zuordnen\n"
-            "3) OCR starten\n\n"
-            "Tipp: Beim ersten Mal lädt PaddleOCR Modelle (kann dauern)."
-        )
-        form.add_widget(self.make_text_label(hint, size_hint_y=None, height=dp(140)))
 
         # Pick image
         pick_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=input_h, spacing=dp(10))
@@ -113,18 +159,8 @@ class OcrImportMixin:
         form.add_widget(pick_row)
 
         # OCR lang
-        form.add_widget(self.make_title_label("OCR-Sprache (PaddleOCR 'lang')", size_hint_y=None, height=dp(32)))
-        self._ocr_lang_input = self.style_textinput(
-            TextInput(text="en", multiline=False, size_hint=(1, None), height=input_h)
-        )
-        form.add_widget(self._ocr_lang_input)
-
-        # Orientation
-        ori_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(42), spacing=dp(10))
-        self._ocr_textline_ori = CheckBox(active=True)
-        ori_row.add_widget(self._ocr_textline_ori)
-        ori_row.add_widget(self.make_text_label("Textline-Orientation (gegen gedrehte Fotos)", halign="left"))
-        form.add_widget(ori_row)
+        self._ocr_lang_auto = self._ocr_guess_paddle_lang(self.vocab_root() + stack)
+        self._ocr_lang_auto = self._ocr_guess_paddle_lang(self.vocab_root() + stack)
 
         # Column count
         form.add_widget(self.make_title_label("Wie viele Spalten hat die Seite?", size_hint_y=None, height=dp(32)))
@@ -206,6 +242,79 @@ class OcrImportMixin:
             self.add_vocab(stack, vocab_list)
         else:
             self.main_menu()
+
+    def _on_ocr_review_key_down(self, _window, key, _scancode, _codepoint, modifiers):
+        # Only handle keys while the OCR review UI is visible.
+        if not bool(getattr(self, "_ocr_review_active", False)):
+            return False
+
+        # ESC / Android back
+        if key == 27:
+            self._ocr_setup_screen()
+            return True
+
+        if key not in (9, 13, 271):
+            return False
+
+        inputs = self._ocr_review_inputs()
+        if not inputs:
+            return False
+
+        focused = None
+        for i, w in enumerate(inputs):
+            if getattr(w, "focus", False):
+                focused = i
+                break
+
+        if focused is None:
+            inputs[0].focus = True
+            return True
+
+        # Tab / Shift+Tab: cycle through the fields
+        if key == 9:
+            mods = modifiers or []
+            if "shift" in mods:
+                nxt = (focused - 1) % len(inputs)
+            else:
+                nxt = (focused + 1) % len(inputs)
+            inputs[nxt].focus = True
+            return True
+
+        # Enter: accept current row and move on
+        if key in (13, 271):
+            self._ocr_accept()
+            return True
+
+        return False
+
+    def _ocr_review_inputs(self) -> List[TextInput]:
+        """Return the TextInputs that are currently visible in the OCR review screen (in tab order)."""
+        inputs: List[TextInput] = []
+        for name in ("_ocr_in_foreign", "_ocr_in_own", "_ocr_in_third"):
+            w = getattr(self, name, None)
+            if isinstance(w, TextInput):
+                inputs.append(w)
+        return inputs
+
+    def _bind_ocr_review_keys(self):
+        """Bind keyboard handler for Tab/Enter while OCR review is active."""
+        if getattr(self, "_ocr_keys_bound", False):
+            return
+        try:
+            Window.bind(on_key_down=self._on_ocr_review_key_down)
+            self._ocr_keys_bound = True
+        except Exception as e:
+            log(f"ocr: bind keys failed: {e}")
+
+    def _unbind_ocr_review_keys(self):
+        """Unbind keyboard handler."""
+        if not getattr(self, "_ocr_keys_bound", False):
+            return
+        try:
+            Window.unbind(on_key_down=self._on_ocr_review_key_down)
+        except Exception:
+            pass
+        self._ocr_keys_bound = False
 
     # -------------------------
     # Image picker
@@ -322,8 +431,8 @@ class OcrImportMixin:
         for spn in (getattr(self, "_ocr_map_spinners", [])[:n_cols]):
             mapping.append((spn.text or "Ignorieren").strip())
 
-        lang = (getattr(self, "_ocr_lang_input", None).text or "en").strip() or "en"
-        use_ori = bool(getattr(self, "_ocr_textline_ori", None).active)
+        lang = (getattr(self, "_ocr_lang_auto", "en") or "en").strip() or "en"
+        use_ori = False
 
         token = object()
         self._ocr_cancel_token = token
@@ -396,27 +505,24 @@ class OcrImportMixin:
         self._ocr_setup_screen()
 
     def _ocr_worker(
-        self,
-        *,
-        token: object,
-        image_path: str,
-        lang: str,
-        use_textline_orientation: bool,
-        n_cols: int,
-        mapping: List[str],
+            self,
+            *,
+            token: object,
+            image_path: str,
+            lang: str,
+            use_textline_orientation: bool,
+            n_cols: int,
+            mapping: List[str],
     ):
         try:
             cache = Path(data_dir()) / "paddleocr_models"
             cache.mkdir(parents=True, exist_ok=True)
+
             os.environ.setdefault("DISABLE_AUTO_LOGGING_CONFIG", "1")
             os.environ.setdefault("PADDLEX_HOME", str(cache))
             os.environ.setdefault("PADDLEX_CACHE_DIR", str(cache))
 
             import sys
-
-            # Model cache dir (du hast cache schon)
-            cache = Path(data_dir()) / "paddleocr_models"
-            cache.mkdir(parents=True, exist_ok=True)
 
             out_json = Path(data_dir()) / "ocr_cache" / f"ocr_out_{int(time.time())}.json"
             try:
@@ -439,6 +545,27 @@ class OcrImportMixin:
 
             if proc.returncode != 0:
                 err = (proc.stderr or proc.stdout or "").strip()
+
+                # If lang is unsupported on this server, retry with English.
+                if (
+                        "not recognized" in err.lower() or "unsupported" in err.lower() or "unknown" in err.lower()) and lang != "en":
+                    cmd2 = cmd[:]  # copy
+                    # replace --lang value
+                    for i in range(len(cmd2) - 1):
+                        if cmd2[i] == "--lang":
+                            cmd2[i + 1] = "en"
+                            break
+                    proc2 = subprocess.run(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    if proc2.returncode == 0:
+                        proc = proc2
+                    else:
+                        err2 = (proc2.stderr or proc2.stdout or "").strip()
+                        raise RuntimeError(err2 or err or f"OCR subprocess failed (code {proc.returncode})")
+                else:
+                    raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
+
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout or "").strip()
                 raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
 
             if not out_json.exists():
@@ -446,32 +573,9 @@ class OcrImportMixin:
 
             json_pages = json.loads(out_json.read_text(encoding="utf-8"))
             try:
-                out_json.unlink(missing_ok=True)  # py3.12 ok
+                out_json.unlink(missing_ok=True)
             except Exception:
                 pass
-
-
-            import paddleocr as paddleocr_pkg  # noqa: F401
-            from paddleocr import PaddleOCR
-
-            if not hasattr(self, "_paddleocr_engine") or self._paddleocr_engine is None:
-                self._paddleocr_engine = PaddleOCR(lang=lang, use_textline_orientation=use_textline_orientation)
-                self._paddleocr_engine_lang = lang
-                self._paddleocr_engine_ori = use_textline_orientation
-            else:
-                if getattr(self, "_paddleocr_engine_lang", None) != lang or getattr(self, "_paddleocr_engine_ori", None) != use_textline_orientation:
-                    self._paddleocr_engine = PaddleOCR(lang=lang, use_textline_orientation=use_textline_orientation)
-                    self._paddleocr_engine_lang = lang
-                    self._paddleocr_engine_ori = use_textline_orientation
-
-            ocr = self._paddleocr_engine
-            results = ocr.predict(str(image_path), use_textline_orientation=use_textline_orientation)
-
-            json_pages = []
-            for res in results or []:
-                j = getattr(res, "json", None)
-                if isinstance(j, dict):
-                    json_pages.append(j)
 
             rows = self._ocr_rows_from_paddle_json(json_pages, n_cols=n_cols)
             entries = self._ocr_rows_to_vocab_entries(rows, mapping=mapping)
@@ -501,14 +605,12 @@ class OcrImportMixin:
         except Exception:
             pass
 
+        hint = getattr(labels, "ocr_failed_hint", "") or ""
+        text = msg + ("\n\n" + hint if hint else "")
+
         Popup(
-            title="OCR fehlgeschlagen",
-            content=self.make_text_label(
-                msg + "\n\n"
-                "Wenn das auf Android passiert: PaddleOCR ist sehr groß und braucht spezielle Buildozer/NDK-Konfiguration.\n"
-                "Auf Desktop sollte es (mit installierter paddleocr/paddle) laufen.",
-                halign="center",
-            ),
+            title=getattr(labels, "ocr_failed_title", "OCR fehlgeschlagen"),
+            content=self.make_text_label(text, halign="center"),
             size_hint=(0.9, None),
             height=dp(320),
         ).open()
@@ -704,6 +806,10 @@ class OcrImportMixin:
             self._ocr_setup_screen()
             return
 
+        # IMPORTANT: enable review key handling
+        self._ocr_review_active = True
+        self._bind_ocr_review_keys()
+
         self._ocr_render_review()
 
     def _ocr_render_review(self):
@@ -749,23 +855,47 @@ class OcrImportMixin:
             self._ocr_in_third = None
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(56), spacing=dp(10))
-        back_btn = self.make_secondary_button("Zurück", size_hint=(0.33, 1))
-        skip_btn = self.make_secondary_button("Überspringen", size_hint=(0.33, 1))
-        ok_btn = self.make_success_button("Passt", size_hint=(0.34, 1))
+
+        # sauber: echte Danger-Variante benutzen (bleibt rund)
+        if hasattr(self, "make_danger_button"):
+            del_btn = self.make_danger_button("Löschen", size_hint=(0.22, 1))
+        else:
+            del_btn = self.make_secondary_button("Löschen", size_hint=(0.22, 1))
+            # fallback: falls RoundedButton -> set_bg_color
+            if hasattr(del_btn, "set_bg_color"):
+                del_btn.set_bg_color(self.colors["danger"])
+            else:
+                del_btn.background_normal = ""
+                del_btn.background_down = ""
+                del_btn.background_color = self.colors["danger"]
+
+        del_btn.bind(on_press=self._ocr_delete_current)
+
+        back_btn = self.make_secondary_button("Zurück", size_hint=(0.26, 1))
+        skip_btn = self.make_secondary_button("Überspringen", size_hint=(0.26, 1))
+        ok_btn = self.make_success_button("Passt", size_hint=(0.26, 1))
 
         back_btn.bind(on_press=self._ocr_prev)
         skip_btn.bind(on_press=self._ocr_skip)
         ok_btn.bind(on_press=self._ocr_accept)
 
+        row.add_widget(del_btn)
         row.add_widget(back_btn)
         row.add_widget(skip_btn)
         row.add_widget(ok_btn)
         card.add_widget(row)
 
-        done_btn = self.make_primary_button("Import jetzt abschließen", size_hint=(1, None), height=dp(54))
-        done_btn.bind(on_press=self._ocr_finish)
-        card.add_widget(done_btn)
+        # smaller + safer placement (bottom right)
+        done_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(46), spacing=dp(10))
+        done_row.add_widget(Widget(size_hint=(0.62, 1)))
 
+        done_btn = self.make_primary_button("Import abschließen", size_hint=(0.38, 1))
+        done_btn.bind(on_press=self._ocr_finish)
+
+        done_row.add_widget(done_btn)
+        card.add_widget(done_row)
+
+        # <<< FEHLTE: Card in Center und Center ins Window hängen >>>
         center.add_widget(card)
         self.window.add_widget(center)
 
@@ -812,7 +942,30 @@ class OcrImportMixin:
             return
         self._ocr_render_review()
 
+    def _ocr_delete_current(self, _instance=None):
+        """Remove the currently reviewed entry from the OCR result list."""
+        self._ocr_store_current_edits()
+        idx = int(getattr(self, "_ocr_index", 0) or 0)
+        if 0 <= idx < len(getattr(self, "_ocr_entries", []) or []):
+            try:
+                self._ocr_entries.pop(idx)
+            except Exception:
+                pass
+
+        if not getattr(self, "_ocr_entries", None):
+            self._ocr_review_active = False
+            self._unbind_ocr_review_keys()
+            self._ocr_setup_screen()
+            return
+
+        if idx >= len(self._ocr_entries):
+            idx = len(self._ocr_entries) - 1
+        self._ocr_index = max(0, idx)
+        self._ocr_render_review()
+
     def _ocr_finish(self, _instance=None):
+        self._ocr_review_active = False
+        self._unbind_ocr_review_keys()
         stack = getattr(self, "_ocr_stack", None)
         vocab_list = getattr(self, "_ocr_vocab_list_ref", None)
         if not stack or vocab_list is None:

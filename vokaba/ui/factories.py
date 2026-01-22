@@ -167,6 +167,21 @@ class UIFactoryMixin:
         ti.padding = [dp(10), dp(10), dp(10), dp(10)]
         ti.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
 
+        # Mild centering for single-line inputs (better readability)
+        if not getattr(ti, 'multiline', False):
+            try:
+                ti.halign = 'center'
+                ti.valign = 'middle'
+
+                # TextInput uses text_size for alignment
+                def _update_text_size(_inst, size):
+                    ti.text_size = (max(0, size[0] - dp(20)), None)
+
+                ti.bind(size=_update_text_size)
+                _update_text_size(ti, ti.size)
+            except Exception:
+                pass
+
         def _on_focus(instance, value):
             if value:
                 self.current_focus_input = instance
