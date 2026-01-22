@@ -618,3 +618,43 @@ class UIFactoryMixin:
             bar.add_widget(btn)
 
         return bar
+
+    def run_open_file_dialog(self, on_selection, *, filters=None, title="Datei öffnen") -> bool:
+        """
+        System-Öffnen-Dialog:
+        - Android: plyer.filechooser.open_file (system picker)
+        - Desktop: Tk open dialog
+        Ruft on_selection(list_of_paths) auf.
+        Gibt True zurück, wenn ein Dialog versucht wurde.
+        """
+        filters = filters or ["*.*"]
+
+        # Android system picker via plyer
+        if kivy_platform == "android" and plyer_filechooser is not None:
+            try:
+                plyer_filechooser.open_file(on_selection=on_selection, filters=filters)
+                return True
+            except Exception:
+                pass
+
+        # Desktop: Tk dialog
+        if kivy_platform in ("win", "linux", "macosx"):
+            patterns = " ".join(filters) if isinstance(filters, (list, tuple)) else str(filters)
+            low = patterns.lower()
+            if "csv" in low:
+                label = "CSV"
+            elif any(x in low for x in ("*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tif", "*.tiff", "*.webp")):
+                label = "Bilder"
+            else:
+                label = "Dateien"
+
+            ft = [(label, patterns), ("Alle Dateien", "*.*")]
+            try:
+                path = self.desktop_open_file_dialog(title=title, filetypes=ft)
+                on_selection([path] if path else [])
+                return True
+            except Exception:
+                pass
+
+        return False
+

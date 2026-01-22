@@ -91,6 +91,12 @@ class AddVocabMixin:
         self.add_vocab_button.bind(on_press=lambda _i: self.add_vocab_button_func(vocab_list, stack))
         form.add_widget(self.add_vocab_button)
 
+        # OCR button (Bild -> Vokabeln)
+        ocr_btn = self.make_secondary_button("OCR aus Bild …", size_hint=(1, None), height=input_h)
+        ocr_btn.bind(on_press=lambda _i: self.ocr_wizard(stack, vocab_list))
+        form.add_widget(ocr_btn)
+
+
         # Keyboard navigation list
         if self.third_column_input:
             self.widgets_add_vocab = [self.add_foreign_language, self.add_own_language, self.third_column_input, self.add_additional_info, self.add_vocab_button]

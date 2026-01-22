@@ -5,6 +5,7 @@ __all__ = [
     "stacks",
     "add_stack",
     "add_vocab",
+    "ocr_import",
     "edit_vocab",
     "about_dashboard",
     "learn",

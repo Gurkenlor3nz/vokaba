@@ -14,6 +14,8 @@ import labels
 
 from vokaba.theme.theme_manager import apply_theme_from_config
 from vokaba.core.logging_utils import log
+from vokaba.mixins.ocr_import import OcrImportMixin
+
 
 from vokaba.ui.factories import UIFactoryMixin
 
@@ -38,6 +40,7 @@ class VokabaApp(
     StacksMixin,
     AddStackMixin,
     AddVocabMixin,
+    OcrImportMixin,
     EditVocabMixin,
     AboutDashboardMixin,
     LearnMixin,
