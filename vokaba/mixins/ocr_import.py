@@ -16,7 +16,7 @@ from kivy.metrics import dp, sp
 from kivy.utils import platform as kivy_platform
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.checkbox import CheckBox
+from kivy.utils import platform as kivy_platform
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
@@ -324,6 +324,8 @@ class OcrImportMixin:
         def on_sel(selection):
             if not selection:
                 return
+            if kivy_platform == "android":
+                self._ensure_android_read_images()
             src = selection[0]
             local = self._ocr_copy_to_local_file(src)
             if not local:
@@ -379,6 +381,20 @@ class OcrImportMixin:
         ok_btn.bind(on_press=_ok)
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
+
+        def _ensure_android_read_images(self):
+            try:
+                from jnius import autoclass
+                from android.permissions import request_permissions, Permission
+                VERSION = autoclass("android.os.Build$VERSION")
+                sdk = int(VERSION.SDK_INT)
+
+                if sdk >= 33:
+                    request_permissions(["android.permission.READ_MEDIA_IMAGES"])
+                else:
+                    request_permissions([Permission.READ_EXTERNAL_STORAGE])
+            except Exception:
+                pass
 
     def _ocr_copy_to_local_file(self, src_raw: str) -> str:
         try:
@@ -541,41 +557,54 @@ class OcrImportMixin:
             if use_textline_orientation:
                 cmd.append("--textline-ori")
 
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if kivy_platform == "android":
+                from paddleocr import PaddleOCR
 
-            if proc.returncode != 0:
-                err = (proc.stderr or proc.stdout or "").strip()
+                ocr = PaddleOCR(lang=str(lang), use_textline_orientation=bool(use_textline_orientation))
+                results = ocr.predict(str(image_path), use_textline_orientation=bool(use_textline_orientation))
 
-                # If lang is unsupported on this server, retry with English.
-                if (
-                        "not recognized" in err.lower() or "unsupported" in err.lower() or "unknown" in err.lower()) and lang != "en":
-                    cmd2 = cmd[:]  # copy
-                    # replace --lang value
-                    for i in range(len(cmd2) - 1):
-                        if cmd2[i] == "--lang":
-                            cmd2[i + 1] = "en"
-                            break
-                    proc2 = subprocess.run(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if proc2.returncode == 0:
-                        proc = proc2
+                json_pages = []
+                for res in results or []:
+                    j = getattr(res, "json", None)
+                    if isinstance(j, dict):
+                        json_pages.append(j)
+
+            else:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                if proc.returncode != 0:
+                    err = (proc.stderr or proc.stdout or "").strip()
+
+                    # If lang is unsupported on this server, retry with English.
+                    if (
+                            "not recognized" in err.lower() or "unsupported" in err.lower() or "unknown" in err.lower()) and lang != "en":
+                        cmd2 = cmd[:]  # copy
+                        # replace --lang value
+                        for i in range(len(cmd2) - 1):
+                            if cmd2[i] == "--lang":
+                                cmd2[i + 1] = "en"
+                                break
+                        proc2 = subprocess.run(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        if proc2.returncode == 0:
+                            proc = proc2
+                        else:
+                            err2 = (proc2.stderr or proc2.stdout or "").strip()
+                            raise RuntimeError(err2 or err or f"OCR subprocess failed (code {proc.returncode})")
                     else:
-                        err2 = (proc2.stderr or proc2.stdout or "").strip()
-                        raise RuntimeError(err2 or err or f"OCR subprocess failed (code {proc.returncode})")
-                else:
+                        raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
+
+                if proc.returncode != 0:
+                    err = (proc.stderr or proc.stdout or "").strip()
                     raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
 
-            if proc.returncode != 0:
-                err = (proc.stderr or proc.stdout or "").strip()
-                raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
+                if not out_json.exists():
+                    raise RuntimeError("OCR subprocess returned ok, but output JSON is missing.")
 
-            if not out_json.exists():
-                raise RuntimeError("OCR subprocess returned ok, but output JSON is missing.")
-
-            json_pages = json.loads(out_json.read_text(encoding="utf-8"))
-            try:
-                out_json.unlink(missing_ok=True)
-            except Exception:
-                pass
+                json_pages = json.loads(out_json.read_text(encoding="utf-8"))
+                try:
+                    out_json.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
             rows = self._ocr_rows_from_paddle_json(json_pages, n_cols=n_cols)
             entries = self._ocr_rows_to_vocab_entries(rows, mapping=mapping)

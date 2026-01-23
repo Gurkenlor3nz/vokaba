@@ -22,6 +22,9 @@ EXCLUDES=(
   "AppDir"
   ".github"
   "*.AppImage"
+  "*.buildozer"
+  "*.docker*"
+  "*.deb-build"
 )
 
 # Erzeuge eine find-Filterkette
