@@ -313,6 +313,161 @@ class StacksMixin:
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
 
+    def export_stack_dialog(self, stack: str, _instance=None):
+        """
+        Export / Share a stack CSV.
+
+        - Android: opens share sheet (Intent / plyer fallback) for the CSV
+        - Desktop: save-as dialog (Tk) + fallback folder chooser
+        """
+        # Resolve source file
+        try:
+            src = os.path.join(self.vocab_root(), stack)
+            if hasattr(self, "_resolve_stack_file"):
+                resolved = self._resolve_stack_file(stack)
+                if resolved:
+                    src = resolved
+            src = os.path.abspath(src)
+        except Exception:
+            src = ""
+
+        if not src or not os.path.isfile(src):
+            Popup(
+                title="Export fehlgeschlagen",
+                content=self.make_text_label(
+                    f"Datei nicht gefunden:\n{src or '(leer)'}",
+                    halign="center",
+                ),
+                size_hint=(0.9, None),
+                height=dp(240),
+            ).open()
+            return
+
+        # --------------------------
+        # ANDROID: share sheet
+        # --------------------------
+        if kivy_platform == "android":
+            share_path = src
+
+            # copy to a dedicated export dir (more predictable filename)
+            try:
+                from pathlib import Path
+                from vokaba.core.paths import data_dir
+
+                export_dir = Path(data_dir()) / "exports"
+                export_dir.mkdir(parents=True, exist_ok=True)
+                dst = export_dir / os.path.basename(src)
+                shutil.copy2(src, str(dst))
+                share_path = str(dst)
+            except Exception as e:
+                log(f"export temp copy failed: {e}")
+
+            ok = False
+
+            # 1) Prefer your Android Intent helper (FileProvider/text fallback)
+            try:
+                if hasattr(self, "run_share_file_dialog"):
+                    ok = bool(self.run_share_file_dialog(share_path, mime_type="text/csv", title="CSV teilen"))
+            except Exception as e:
+                log(f"run_share_file_dialog failed: {e}")
+                ok = False
+
+            # 2) plyer.share fallback
+            if not ok and plyer_share is not None:
+                try:
+                    try:
+                        plyer_share.share(filepath=share_path, mime_type="text/csv", title="CSV teilen")
+                    except TypeError:
+                        plyer_share.share(filepath=share_path, title="CSV teilen")
+                    ok = True
+                except Exception as e:
+                    log(f"plyer_share failed: {e}")
+                    ok = False
+
+            if not ok:
+                err = getattr(self, "_last_share_error", "") or ""
+                Popup(
+                    title="Export fehlgeschlagen",
+                    content=self.make_text_label(
+                        "Der Share-Dialog konnte nicht geöffnet werden.\n\n"
+                        f"Datei: {share_path}\n\n"
+                        f"Details: {err or 'keine Details verfügbar'}",
+                        halign="center",
+                    ),
+                    size_hint=(0.9, None),
+                    height=dp(340),
+                ).open()
+
+            return
+
+        # --------------------------
+        # DESKTOP: save-as dialog
+        # --------------------------
+        def do_export(dest_path: str):
+            if not dest_path:
+                return
+            dest = str(dest_path)
+            if not dest.lower().endswith(".csv"):
+                dest += ".csv"
+
+            try:
+                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                shutil.copy2(src, dest)
+                Popup(
+                    title="Export erfolgreich",
+                    content=self.make_text_label(f"Exportiert nach:\n{dest}", halign="center"),
+                    size_hint=(0.9, None),
+                    height=dp(240),
+                ).open()
+            except Exception as e:
+                Popup(
+                    title="Export fehlgeschlagen",
+                    content=self.make_text_label(
+                        f"Konnte nicht exportieren.\n\nQuelle: {src}\nZiel: {dest}\n\nFehler: {e}",
+                        halign="center",
+                    ),
+                    size_hint=(0.9, None),
+                    height=dp(340),
+                ).open()
+
+        def on_sel(selection):
+            if selection:
+                Clock.schedule_once(lambda _dt: do_export(selection[0]), 0)
+
+        # try system save dialog
+        try:
+            if hasattr(self, "run_save_file_dialog") and self.run_save_file_dialog(
+                    on_sel, default_filename=os.path.basename(src), title="CSV exportieren"
+            ):
+                return
+        except Exception as e:
+            log(f"System save dialog failed: {e}")
+
+        # fallback: choose a folder and copy into it
+        chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=True)
+        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        content.add_widget(chooser)
+
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
+        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"),
+                                                size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button("In Ordner exportieren", size_hint=(0.5, 1))
+        row.add_widget(cancel_btn)
+        row.add_widget(ok_btn)
+        content.add_widget(row)
+
+        popup = Popup(title="Export-Ordner wählen", content=content, size_hint=(0.9, 0.9))
+
+        def _ok(*_a):
+            if chooser.selection:
+                folder = chooser.selection[0]
+                do_export(os.path.join(folder, os.path.basename(src)))
+            popup.dismiss()
+
+        ok_btn.bind(on_press=_ok)
+        cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
+        popup.open()
+
     # --------------------
     # Open folder helper
     # --------------------

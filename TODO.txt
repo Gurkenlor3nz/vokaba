@@ -16,7 +16,6 @@ textbox clear, nach falscher eingabe bei tippen
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 update, ohne alle dateien zu verlieren bei android
 export button fixen
-review von Android an oberer hälfte des kasten wegen on-screen tastatur
 
 
 PVP gegen andere
