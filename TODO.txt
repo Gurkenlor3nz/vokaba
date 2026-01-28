@@ -1,21 +1,12 @@
----PC---
-GUI Maus UND Tastaturshortcuts (vllt. Kivy https://kivy.org/doc/stable/gettingstarted/installation.html)
-
-
-als exe für Win, bin oder bash für Linux (Portabel)
-tts einbauen
-Ocr erschließen
-Ki für vokabel erkennung
-
----Android---
-Andriod app (vllt. Buildozer)
-
-important before release:
-share passiert nicht, beim exportieren passiert beim tablet einfach nichts, beim import crasht es sogar. PC geht alles sauber
-textbox clear, nach falscher eingabe bei tippen
-mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
-update, ohne alle dateien zu verlieren bei android
-export button fixen
+0.1
 beim export einen kleinen dialog öffnen, der fragt, ob die wissens-scores mitexportiert werden sollen. bei nein, einfach alle auf 0,0 setzen
 
+
+0.2
+textbox clear, nach falscher eingabe bei tippen
+mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
+
+-mal schauen wann-
+update, ohne alle dateien zu verlieren bei android
 PVP gegen andere
+tts
