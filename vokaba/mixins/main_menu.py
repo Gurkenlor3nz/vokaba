@@ -12,6 +12,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
 import labels
+import save
 from vokaba.core.logging_utils import log
 from vokaba.ui.widgets.rounded import RoundedCard
 
@@ -60,7 +61,21 @@ class MainMenuMixin:
         for full in self._list_stack_files():
             stacks.append(full)
 
-        for full in sorted(stacks, key=lambda p: os.path.basename(p).lower()):
+        sort_mode = (((self.config_data or {}).get("settings") or {}).get("stack_sort_mode") or "name").lower()
+
+        def sort_key(p: str):
+            base = os.path.basename(p).lower()
+            if sort_mode != "language":
+                return ("", "", base)
+            try:
+                own, foreign, _latin, _latin_active = save.read_languages(p)
+                own = (own or "").strip().lower()
+                foreign = (foreign or "").strip().lower()
+            except Exception:
+                own, foreign = "", ""
+            return (foreign, own, base)
+
+        for full in sorted(stacks, key=sort_key):
             name = os.path.basename(full)
             btn = self.make_list_button(name[:-4])
             btn.bind(on_release=lambda _btn, fname=name: self.select_stack(fname))

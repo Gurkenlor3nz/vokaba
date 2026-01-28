@@ -370,6 +370,11 @@ def load_settings() -> dict:
             "daily_cards_done": 0,
             "total_learn_time_seconds": 0,
         },
+        "stack_sort_mode": "name",  # "name" | "language"
+        "global_learn_languages": [],  # [] = alle
+        "typing": {
+            "require_self_rating": True,
+        },
     }
 
     migrate_legacy_data()  # einmalig alte config/csvs rüberziehen
@@ -414,6 +419,11 @@ def load_settings() -> dict:
     stats = cfg.setdefault("stats", {})
     for k, v in default_config["stats"].items():
         stats.setdefault(k, v)
+
+    settings.setdefault("stack_sort_mode", "name")
+    settings.setdefault("global_learn_languages", [])
+    typing_cfg = settings.setdefault("typing", {})
+    typing_cfg.setdefault("require_self_rating", True)
 
     save_settings(cfg)
     return cfg

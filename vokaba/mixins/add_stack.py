@@ -34,20 +34,15 @@ class AddStackMixin:
         self.window.add_widget(top_right)
 
         # Top-center: title
-        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=30 * pad_mul)
-        top_center.add_widget(
-            self.make_title_label(
-                getattr(labels, "add_stack_title_text", "Stapel Hinzufügen"),
-                size_hint=(None, None),
-                size=(dp(360), dp(40)),
-            )
+        center = AnchorLayout(
+            anchor_x="center",
+            anchor_y="center",
+            padding=[40 * pad_mul, 120 * pad_mul, 40 * pad_mul, 40 * pad_mul],
         )
-        self.window.add_widget(top_center)
 
-        center = AnchorLayout(anchor_x="center", anchor_y="center", padding=40 * pad_mul)
         card = RoundedCard(
             orientation="vertical",
-            size_hint=(0.95, 0.95),
+            size_hint=(0.92, 0.82),
             padding=dp(16),
             spacing=dp(12),
             bg_color=self.colors["card"],

@@ -41,6 +41,11 @@ class AddVocabMixin:
         input_h = self.get_textinput_height()
         self._add_vocab_stack = stack
 
+        # Top-center: stack title (außerhalb der Card)
+        top_center = AnchorLayout(anchor_x="center", anchor_y="top", padding=15 * pad_mul)
+        top_center.add_widget(self.make_title_label(stack[:-4], size_hint=(None, None), size=(dp(300), dp(40))))
+        self.window.add_widget(top_center)
+
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=[40 * pad_mul, 120 * pad_mul, 40 * pad_mul, 40 * pad_mul])
         scroll = ScrollView(size_hint=(1, 1))
 

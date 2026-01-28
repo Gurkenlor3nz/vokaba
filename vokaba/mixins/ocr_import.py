@@ -896,16 +896,26 @@ class OcrImportMixin:
 
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30 * pad_mul)
         top_right.add_widget(
-            self.make_icon_button("assets/back_button.png", on_press=lambda _i: self._ocr_setup_screen(), size=dp(56)))
+            self.make_icon_button("assets/back_button.png", on_press=lambda _i: self._ocr_setup_screen(), size=dp(56))
+        )
         self.window.add_widget(top_right)
 
-        center = AnchorLayout(anchor_x="center", anchor_y="center", padding=40 * pad_mul)
-        card = RoundedCard(orientation="vertical", size_hint=(0.92, 0.85), padding=dp(16), spacing=dp(12),
-                           bg_color=self.colors["card"])
+        # >>> FIX: oben anheften statt center (Tablet/Keyboard-friendly)
+        outer = AnchorLayout(
+            anchor_x="center",
+            anchor_y="top",
+            padding=[40 * pad_mul, 110 * pad_mul, 40 * pad_mul, 30 * pad_mul],
+        )
+
+        card = RoundedCard(
+            orientation="vertical",
+            size_hint=(0.92, 0.85),
+            padding=dp(16),
+            spacing=dp(12),
+            bg_color=self.colors["card"],
+        )
 
         live_total = len(getattr(self, "_ocr_entries", []) or [])
-
-        # >>> FIX: total aus gespeichertem "Gesamt" nehmen (nicht aus idx / remaining)
         total_all = int(getattr(self, "_ocr_total_all", 0) or 0)
         if total_all <= 0:
             total_all = live_total
@@ -920,28 +930,39 @@ class OcrImportMixin:
         idx = max(0, min(live_total - 1, idx))
 
         current = min(idx + 1, total_all)
-        card.add_widget(self.make_title_label(f"Review {current}/{total_all}", size_hint_y=None, height=dp(40)))
-
         entry = self._ocr_entries[idx]
 
-        card.add_widget(self.make_title_label("Fremdsprache", size_hint_y=None, height=dp(30)))
+        # Scrollbarer Inhalt (damit man bei Tastatur noch alles sieht)
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_y=True)
+        form = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(12), padding=dp(4))
+        form.bind(minimum_height=form.setter("height"))
+
+        form.add_widget(self.make_title_label(f"Review {current}/{total_all}", size_hint_y=None, height=dp(40)))
+
+        form.add_widget(self.make_title_label("Fremdsprache", size_hint_y=None, height=dp(30)))
         self._ocr_in_foreign = self.style_textinput(
-            TextInput(text=entry.get("foreign_language", ""), multiline=False, size_hint=(1, None), height=input_h))
-        card.add_widget(self._ocr_in_foreign)
+            TextInput(text=entry.get("foreign_language", ""), multiline=False, size_hint=(1, None), height=input_h)
+        )
+        form.add_widget(self._ocr_in_foreign)
 
-        card.add_widget(self.make_title_label("Eigene Sprache", size_hint_y=None, height=dp(30)))
+        form.add_widget(self.make_title_label("Eigene Sprache", size_hint_y=None, height=dp(30)))
         self._ocr_in_own = self.style_textinput(
-            TextInput(text=entry.get("own_language", ""), multiline=False, size_hint=(1, None), height=input_h))
-        card.add_widget(self._ocr_in_own)
+            TextInput(text=entry.get("own_language", ""), multiline=False, size_hint=(1, None), height=input_h)
+        )
+        form.add_widget(self._ocr_in_own)
 
+        self._ocr_in_third = None
         if latin_active:
-            card.add_widget(self.make_title_label("Dritte Spalte", size_hint_y=None, height=dp(30)))
+            form.add_widget(self.make_title_label("Dritte Spalte", size_hint_y=None, height=dp(30)))
             self._ocr_in_third = self.style_textinput(
-                TextInput(text=entry.get("latin_language", ""), multiline=False, size_hint=(1, None), height=input_h))
-            card.add_widget(self._ocr_in_third)
-        else:
-            self._ocr_in_third = None
+                TextInput(text=entry.get("latin_language", ""), multiline=False, size_hint=(1, None), height=input_h)
+            )
+            form.add_widget(self._ocr_in_third)
 
+        scroll.add_widget(form)
+        card.add_widget(scroll)
+
+        # Buttons unten (außerhalb vom Scroll)
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(56), spacing=dp(10))
 
         if hasattr(self, "make_danger_button"):
@@ -973,15 +994,13 @@ class OcrImportMixin:
 
         done_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(46), spacing=dp(10))
         done_row.add_widget(Widget(size_hint=(0.62, 1)))
-
         done_btn = self.make_primary_button("Import abschließen", size_hint=(0.38, 1))
         done_btn.bind(on_press=self._ocr_finish)
-
         done_row.add_widget(done_btn)
         card.add_widget(done_row)
 
-        center.add_widget(card)
-        self.window.add_widget(center)
+        outer.add_widget(card)
+        self.window.add_widget(outer)
 
         Clock.schedule_once(lambda _dt: setattr(self._ocr_in_foreign, "focus", True), 0.05)
 

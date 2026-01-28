@@ -246,6 +246,63 @@ class SettingsMixin:
         modes_card.add_widget(grid)
         content.add_widget(modes_card)
 
+        content.add_widget(Label(size_hint_y=None, height=dp(18)))
+        content.add_widget(self.make_title_label(getattr(labels, "settings_stacks_header", "Stapel & Filter"),
+                                                 size_hint_y=None, height=dp(40)))
+
+        extra_card = RoundedCard(orientation="vertical", size_hint_y=None, padding=dp(10), spacing=dp(10),
+                                 bg_color=self.colors["card"])
+        extra_card.bind(minimum_height=extra_card.setter("height"))
+
+        grid2 = GridLayout(cols=2, size_hint_y=None, row_default_height=dp(50), row_force_default=True,
+                           spacing=dp(8), padding=(0, dp(4), 0, dp(4)))
+        grid2.bind(minimum_height=grid2.setter("height"))
+
+        # 1) Sort by language
+        sort_mode = str(get_in(self.config_data, ["settings", "stack_sort_mode"], "name") or "name").lower()
+        lbl = self.make_text_label(getattr(labels, "settings_sort_stacks_by_language", "Stapel nach Sprache sortieren"),
+                                   size_hint_y=None, height=dp(50))
+        cb = CheckBox(active=(sort_mode == "language"), size_hint=(None, None), size=(dp(36), dp(36)))
+
+        def _set_sort(_inst, value):
+            set_in(self.config_data, ["settings", "stack_sort_mode"], "language" if value else "name")
+            save.save_settings(self.config_data)
+
+        cb.bind(active=_set_sort)
+        grid2.add_widget(lbl)
+        grid2.add_widget(cb)
+
+        # 2) Typing self-rating toggle
+        typing_need = bool_cast(get_in(self.config_data, ["settings", "typing", "require_self_rating"], True))
+        lbl2 = self.make_text_label(
+            getattr(labels, "settings_typing_require_self_rating", "Tippen: Selbstbewertung nach richtig"),
+            size_hint_y=None, height=dp(50))
+        cb2 = CheckBox(active=typing_need, size_hint=(None, None), size=(dp(36), dp(36)))
+
+        def _set_typing(_inst, value):
+            set_in(self.config_data, ["settings", "typing", "require_self_rating"], bool(value))
+            save.save_settings(self.config_data)
+
+        cb2.bind(active=_set_typing)
+        grid2.add_widget(lbl2)
+        grid2.add_widget(cb2)
+
+        extra_card.add_widget(grid2)
+
+        # 3) Global learn language filter button
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(10))
+        row.add_widget(
+            self.make_text_label(getattr(labels, "settings_global_learn_languages", "Allgemeines Lernen: Sprachen"),
+                                 size_hint=(0.55, 1), halign="left"))
+        btn = self.make_secondary_button(
+            getattr(labels, "settings_global_learn_languages_button", "Sprachen auswählen…"),
+            size_hint=(0.45, 1))
+        btn.bind(on_press=lambda _i: self._open_global_learn_language_popup())
+        row.add_widget(btn)
+        extra_card.add_widget(row)
+
+        content.add_widget(extra_card)
+
         scroll.add_widget(content)
         card.add_widget(scroll)
         center.add_widget(card)
@@ -301,6 +358,68 @@ class SettingsMixin:
             available = ["front_back"]
 
         self.available_modes = available
+
+    def _open_global_learn_language_popup(self):
+        # verfügbare Sprachen aus Stack-Meta sammeln
+        langs = set()
+        for f in self._list_stack_files():
+            try:
+                own, foreign, _latin, _latin_active = save.read_languages(f)
+                if own: langs.add(str(own).strip())
+                if foreign: langs.add(str(foreign).strip())
+            except Exception:
+                pass
+        langs = sorted([l for l in langs if l])
+
+        selected = set(get_in(self.config_data, ["settings", "global_learn_languages"], []) or [])
+
+        box = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+        scroll = ScrollView(size_hint=(1, 1))
+        inner = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
+        inner.bind(minimum_height=inner.setter("height"))
+
+        for lang in langs:
+            r = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(10))
+            r.add_widget(self.make_text_label(lang, size_hint=(0.75, 1), halign="left"))
+            cb = CheckBox(active=(lang in selected), size_hint=(None, None), size=(dp(36), dp(36)))
+
+            def _toggle(_cb, val, l=lang):
+                if val:
+                    selected.add(l)
+                else:
+                    selected.discard(l)
+
+            cb.bind(active=_toggle)
+            r.add_widget(cb)
+            inner.add_widget(r)
+
+        scroll.add_widget(inner)
+        box.add_widget(scroll)
+
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(10))
+        all_btn = self.make_secondary_button("Alle", size_hint=(0.33, 1))
+        cancel_btn = self.make_secondary_button("Abbrechen", size_hint=(0.33, 1))
+        ok_btn = self.make_primary_button("OK", size_hint=(0.34, 1))
+        row.add_widget(all_btn)
+        row.add_widget(cancel_btn)
+        row.add_widget(ok_btn)
+        box.add_widget(row)
+
+        popup = Popup(title="Sprachen fürs allgemeine Lernen", content=box, size_hint=(0.9, 0.9))
+
+        def _all(*_a):
+            selected.clear()
+
+        def _ok(*_a):
+            set_in(self.config_data, ["settings", "global_learn_languages"], sorted(selected))
+            save.save_settings(self.config_data)
+            popup.dismiss()
+
+        all_btn.bind(on_press=_all)
+        cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
+        ok_btn.bind(on_press=_ok)
+
+        popup.open()
 
     # -----------------------
     # Theme functions

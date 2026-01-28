@@ -164,18 +164,20 @@ class UIFactoryMixin:
         ti.background_color = self.colors.get("card_selected", self.colors["card"])
         ti.foreground_color = self.colors["text"]
         ti.cursor_color = self.colors["accent"]
-        ti.padding = [dp(10), dp(10), dp(10), dp(10)]
+        ti.padding = [dp(12), dp(10), dp(12), dp(10)]
         ti.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
 
-        # Mild centering for single-line inputs (better readability)
-        if not getattr(ti, 'multiline', False):
+        # Single-line: NICHT mehr automatisch zentrieren.
+        # Wenn der Caller explizit halign="center" setzt (z.B. Zahlenfelder), bleibt es center.
+        if not getattr(ti, "multiline", False):
             try:
-                ti.halign = 'center'
-                ti.valign = 'middle'
+                desired = str(getattr(ti, "halign", "auto")).lower()
+                if desired not in ("center", "right"):
+                    ti.halign = "left"
+                ti.valign = "middle"
 
-                # TextInput uses text_size for alignment
                 def _update_text_size(_inst, size):
-                    ti.text_size = (max(0, size[0] - dp(20)), None)
+                    ti.text_size = (max(0, size[0] - dp(24)), None)
 
                 ti.bind(size=_update_text_size)
                 _update_text_size(ti, ti.size)
@@ -191,6 +193,21 @@ class UIFactoryMixin:
 
         ti.bind(focus=_on_focus)
         return ti
+
+    def force_focus(self, ti: TextInput, delays=(0, 0.15, 0.35)):
+        # Android/Tablets: manchmal braucht es mehrere Fokus-“Ticks”
+        if ti is None:
+            return
+
+        def _set(_dt):
+            try:
+                ti.focus = True
+                self.current_focus_input = ti
+            except Exception:
+                pass
+
+        for d in delays:
+            Clock.schedule_once(_set, d)
 
     def get_textinput_height(self) -> float:
         # ~1 line + padding. Uses sp() so the height stays usable across DPI classes.
@@ -496,8 +513,13 @@ class UIFactoryMixin:
     def _android_share_file_intent(self, filepath: str, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
         """
         Share-Sheet via Android Intent.
-        Startet Activity auf dem Android UI Thread (wichtig für manche Geräte/ROMs).
         """
+        # fürs Debug/Popup
+        try:
+            self._last_share_error = ""
+        except Exception:
+            pass
+
         try:
             from jnius import autoclass
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
@@ -506,12 +528,15 @@ class UIFactoryMixin:
             Intent = autoclass("android.content.Intent")
             File = autoclass("java.io.File")
             Uri = autoclass("android.net.Uri")
+            VERSION = autoclass("android.os.Build$VERSION")
+            sdk = int(VERSION.SDK_INT)
 
             try:
                 from android.runnable import run_on_ui_thread
             except Exception:
                 run_on_ui_thread = None
-        except Exception:
+        except Exception as e:
+            self._last_share_error = str(e)
             return False
 
         file_obj = File(filepath)
@@ -532,14 +557,17 @@ class UIFactoryMixin:
                 try:
                     uri = FileProvider.getUriForFile(activity, pkg + suffix, file_obj)
                     break
-                except Exception:
+                except Exception as e:
                     uri = None
+                    self._last_share_error = str(e)
 
-        if uri is None:
+        # WICHTIG: Auf Android >= 24 KEIN Uri.fromFile fallback mehr (häufig kaputt)
+        if uri is None and sdk < 24:
             try:
                 uri = Uri.fromFile(file_obj)
-            except Exception:
+            except Exception as e:
                 uri = None
+                self._last_share_error = str(e)
 
         def _start(intent_obj):
             try:
@@ -553,7 +581,8 @@ class UIFactoryMixin:
                 else:
                     activity.startActivity(chooser)
                 return True
-            except Exception:
+            except Exception as e:
+                self._last_share_error = str(e)
                 return False
 
         # try file share
@@ -565,10 +594,10 @@ class UIFactoryMixin:
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 if _start(intent):
                     return True
-            except Exception:
-                pass
+            except Exception as e:
+                self._last_share_error = str(e)
 
-        # fallback: share as text (at least share sheet opens)
+        # fallback: share as text (damit wenigstens Share-Sheet aufgeht)
         try:
             try:
                 txt = open(filepath, "r", encoding="utf-8").read()
@@ -578,8 +607,10 @@ class UIFactoryMixin:
             intent.setType("text/plain")
             intent.putExtra(Intent.EXTRA_TEXT, txt)
             return _start(intent)
-        except Exception:
+        except Exception as e:
+            self._last_share_error = str(e)
             return False
+
 
     def run_share_file_dialog(self, filepath: str, *, mime_type: str = "text/csv", title: str = "Teilen") -> bool:
         if not filepath:
@@ -644,10 +675,18 @@ class UIFactoryMixin:
         """
         filters = filters or ["*.*"]
 
+        def _safe_call(selection):
+            # plyer callback kann nicht im Kivy-Thread sein -> immer schedulen
+            try:
+                sel = list(selection) if selection else []
+            except Exception:
+                sel = []
+            Clock.schedule_once(lambda _dt: on_selection(sel), 0)
+
         # Android system picker via plyer
         if kivy_platform == "android" and plyer_filechooser is not None:
             try:
-                plyer_filechooser.open_file(on_selection=on_selection, filters=filters)
+                plyer_filechooser.open_file(on_selection=_safe_call, filters=filters)
                 return True
             except Exception:
                 pass
@@ -666,10 +705,9 @@ class UIFactoryMixin:
             ft = [(label, patterns), ("Alle Dateien", "*.*")]
             try:
                 path = self.desktop_open_file_dialog(title=title, filetypes=ft)
-                on_selection([path] if path else [])
+                _safe_call([path] if path else [])
                 return True
             except Exception:
                 pass
 
         return False
-

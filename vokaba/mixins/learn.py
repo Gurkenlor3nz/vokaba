@@ -22,6 +22,7 @@ import labels
 import save
 from vokaba.core.logging_utils import log
 from vokaba.ui.widgets.rounded import RoundedCard, RoundedButton
+from vokaba.core.dict_path import bool_cast
 
 
 class LearnMixin:
@@ -1234,6 +1235,13 @@ class LearnMixin:
     # ------------------------------------------------------------
 
     def _clean_target_for_salad(self, raw: str) -> str:
+        """
+        Buchstaben-Salat:
+          - Inhalt in (...) ignorieren (wie bisher)
+          - Leerzeichen behalten (als echte Ziel-Character)
+          - Tabs/Zeilenumbrüche -> normales Leerzeichen
+          - Mehrfach-Whitespace -> 1 Space
+        """
         if not raw:
             return ""
         out = []
@@ -1245,10 +1253,16 @@ class LearnMixin:
             if ch == ")":
                 in_parens = False
                 continue
-            if in_parens or ch.isspace():
+            if in_parens:
                 continue
-            out.append(ch)
-        return "".join(out)
+            if ch in "\r\n\t":
+                out.append(" ")
+            else:
+                out.append(ch)
+
+        s = "".join(out).replace("\u00A0", " ")
+        s = re.sub(r"[ ]{2,}", " ", s)
+        return s.strip()
 
     def letter_salad(self):
         self.learn_content.clear_widgets()
@@ -1258,7 +1272,7 @@ class LearnMixin:
 
         self.header_label.text = ""
 
-        raw_target = (vocab.get("foreign_language", "") or "").strip()
+        raw_target = (vocab.get("foreign_language", "") or "")
         target = self._clean_target_for_salad(raw_target)
         if not target:
             self._advance_to_next()
@@ -1273,8 +1287,10 @@ class LearnMixin:
         self.letter_salad_progress = 0
         self.letter_salad_typed = ""
 
-        center = AnchorLayout(anchor_x="center", anchor_y="center", padding=30 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]))
-        card = RoundedCard(orientation="vertical", size_hint=(0.85, 0.55), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
+        center = AnchorLayout(anchor_x="center", anchor_y="center",
+                              padding=30 * float(self.config_data["settings"]["gui"]["padding_multiplicator"]))
+        card = RoundedCard(orientation="vertical", size_hint=(0.85, 0.55), padding=dp(16),
+                           spacing=dp(12), bg_color=self.colors["card"])
 
         card.add_widget(self.make_title_label(vocab.get("own_language", ""), size_hint_y=None, height=dp(40)))
 
@@ -1282,7 +1298,8 @@ class LearnMixin:
         if latin:
             card.add_widget(self.make_text_label(latin, size_hint_y=None, height=dp(30)))
 
-        card.add_widget(self.make_text_label(getattr(labels, "letter_salad_instruction", "Tap the letters in order."), size_hint_y=None, height=dp(30)))
+        card.add_widget(self.make_text_label(getattr(labels, "letter_salad_instruction", "Tap the letters in order."),
+                                             size_hint_y=None, height=dp(30)))
 
         self.letter_salad_progress_label = self.make_title_label("", size_hint_y=None, height=dp(40))
         card.add_widget(self.letter_salad_progress_label)
@@ -1295,18 +1312,21 @@ class LearnMixin:
 
         self.letter_salad_buttons = []
         for ch in scrambled:
+            display = "i" if ch == "I" else ch  # sichtbar machen
             btn = RoundedButton(
-                text=ch,
+                text=display,
                 bg_color=self.colors["card"],
                 color=self.colors["text"],
                 font_size=sp(int(self.config_data["settings"]["gui"]["title_font_size"])),
                 size_hint=(None, None),
                 size=(dp(56), dp(56)),
             )
+            btn._letter = ch  # echte Bedeutung
             btn.bind(on_press=self.letter_salad_letter_pressed)
             self.letter_salad_buttons.append(btn)
 
-            wrapper = RoundedCard(orientation="vertical", size_hint=(None, None), padding=dp(3), bg_color=self.colors["card_selected"])
+            wrapper = RoundedCard(orientation="vertical", size_hint=(None, None), padding=dp(3),
+                                  bg_color=self.colors["card_selected"])
             wrapper.add_widget(btn)
             grid.add_widget(wrapper)
 
@@ -1316,7 +1336,8 @@ class LearnMixin:
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
         skip_btn = self.make_secondary_button(getattr(labels, "letter_salad_skip", "Skip"), size_hint=(0.5, 1))
-        reshuffle_btn = self.make_secondary_button(getattr(labels, "letter_salad_reshuffle", "Reshuffle"), size_hint=(0.5, 1))
+        reshuffle_btn = self.make_secondary_button(getattr(labels, "letter_salad_reshuffle", "Reshuffle"),
+                                                   size_hint=(0.5, 1))
         skip_btn.bind(on_press=self.letter_salad_skip)
         reshuffle_btn.bind(on_press=lambda _i: self.letter_salad())
         row.add_widget(skip_btn)
@@ -1335,15 +1356,16 @@ class LearnMixin:
             return
 
         expected = target[idx]
-        clicked = (button.text or "").strip()
+        clicked = getattr(button, "_letter", button.text or "")
 
         if clicked == expected:
             button.set_bg_color(self.colors["success"])
             button.disabled = True
-            self._adjust_knowledge_level(vocab, getattr(labels, "knowledge_delta_letter_salad_per_correct_letter", 0.01))
+            self._adjust_knowledge_level(vocab,
+                                         getattr(labels, "knowledge_delta_letter_salad_per_correct_letter", 0.01))
 
             self.letter_salad_progress += 1
-            self.letter_salad_typed += clicked
+            self.letter_salad_typed += expected  # wichtig: echtes Space anhängen
             self.letter_salad_progress_label.text = self.letter_salad_typed
 
             if self.letter_salad_progress >= len(target):
@@ -1525,6 +1547,11 @@ class LearnMixin:
         # reset typing flow state
         self._typing_waiting_self_rating = False
         self._typing_pending_vocab_id = None
+        self._typing_attempts = 0
+        settings = (self.config_data.get("settings", {}) or {})
+        typing_cfg = (settings.get("typing", {}) or {})
+        self._typing_require_self_rating = bool_cast(typing_cfg.get("require_self_rating", True))
+
 
         center = AnchorLayout(
             anchor_x="center",
@@ -1555,7 +1582,11 @@ class LearnMixin:
         card.add_widget(self.typing_feedback_label)
 
         # Self-rating buttons (ONLY used after a correct answer)
-        self.typing_selfrating_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
+        # Self-rating buttons (ONLY used after a correct answer)
+        self.typing_selfrating_box = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8)
+        )
+
         if self.self_rating_enabled:
             for label_name, quality in [
                 ("self_rating_very_easy", "very_easy"),
@@ -1571,25 +1602,34 @@ class LearnMixin:
                 btn.bind(on_press=lambda _i, q=quality: self.typing_rate_answer(q))
                 self.typing_selfrating_box.add_widget(btn)
 
+        # Box existiert immer, aber nur sichtbar/aktiv wenn require_self_rating=True
         self.typing_selfrating_box.opacity = 0
         self.typing_selfrating_box.disabled = True
         card.add_widget(self.typing_selfrating_box)
 
-        # Buttons row
+        # Buttons row (Check/Skip IMMER anbieten)
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(12))
-        self.typing_check_btn = self.make_primary_button(getattr(labels, "typing_mode_check", "Check"),
-                                                         size_hint=(0.5, 1))
-        self.typing_skip_btn = self.make_secondary_button(getattr(labels, "typing_mode_skip", "Skip"),
-                                                          size_hint=(0.5, 1))
+        self.typing_check_btn = self.make_primary_button(
+            getattr(labels, "typing_mode_check", "Check"), size_hint=(0.5, 1)
+        )
+        self.typing_skip_btn = self.make_secondary_button(
+            getattr(labels, "typing_mode_skip", "Skip"), size_hint=(0.5, 1)
+        )
         self.typing_check_btn.bind(on_press=self.typing_check_answer)
         self.typing_skip_btn.bind(on_press=self.typing_skip)
         row.add_widget(self.typing_check_btn)
         row.add_widget(self.typing_skip_btn)
         card.add_widget(row)
 
+        # Card IMMER anzeigen
         center.add_widget(card)
         self.learn_content.add_widget(center)
-        Clock.schedule_once(lambda _dt: setattr(self.typing_input, "focus", True), 0.05)
+
+        # Fokus IMMER setzen
+        if hasattr(self, "force_focus"):
+            self.force_focus(self.typing_input)
+        else:
+            Clock.schedule_once(lambda _dt: setattr(self.typing_input, "focus", True), 0.2)
 
     def typing_check_answer(self, _instance=None):
         vocab = self._get_current_vocab()
@@ -1606,38 +1646,73 @@ class LearnMixin:
             return
 
         is_correct = self._is_correct_typed_answer(user, vocab)
+        require_self = bool(getattr(self, "_typing_require_self_rating", True))
 
+        # -------------------------
+        # CORRECT
+        # -------------------------
         if is_correct:
-            # show feedback + require self-rating (no auto-advance!)
             self.typing_feedback_label.color = self.colors["success"]
             self.typing_feedback_label.text = getattr(labels, "typing_mode_correct", "Correct!")
 
-            # lock input/buttons
-            try:
-                self.typing_input.disabled = True
-            except Exception:
-                pass
-            for b in (getattr(self, "typing_check_btn", None), getattr(self, "typing_skip_btn", None)):
-                if b is not None:
-                    b.disabled = True
-                    b.opacity = 0.6
+            # Wenn Selbstbewertung AN: wie bisher Rating erzwingen
+            if require_self:
+                # lock input/buttons
+                try:
+                    self.typing_input.disabled = True
+                except Exception:
+                    pass
+                for b in (getattr(self, "typing_check_btn", None), getattr(self, "typing_skip_btn", None)):
+                    if b is not None:
+                        b.disabled = True
+                        b.opacity = 0.6
 
-            # enable rating UI
-            self.typing_selfrating_box.disabled = False
-            self.typing_selfrating_box.opacity = 1
+                # enable rating UI
+                self.typing_selfrating_box.disabled = False
+                self.typing_selfrating_box.opacity = 1
 
-            self._typing_waiting_self_rating = True
-            self._typing_pending_vocab_id = id(vocab)
+                self._typing_waiting_self_rating = True
+                self._typing_pending_vocab_id = id(vocab)
+                return
+
+            # Wenn Selbstbewertung AUS: AUTO-SCORING + weiter
+            attempts = int(getattr(self, "_typing_attempts", 0) or 0)
+
+            base = float(getattr(labels, "knowledge_delta_typing_correct", 0.093) or 0.093)
+            bonus = float(
+                getattr(labels, "knowledge_delta_typing_first_try_bonus", 0.03) or 0.03) if attempts == 0 else 0.0
+            fail_pen = float(getattr(labels, "knowledge_delta_typing_fail_penalty", 0.04) or 0.04)
+
+            delta = base + bonus - (attempts * fail_pen)
+            delta = max(0.02, delta)
+            q_val = max(0.1, 1.0 - 0.25 * attempts)
+
+            self._adjust_knowledge_level(vocab, delta)
+            self.update_srs(vocab, was_correct=True, quality=q_val)
+
+            if self._register_session_step(was_correct=True):
+                return
+            Clock.schedule_once(lambda _dt: self._advance_to_next(), 0.25)
             return
 
-        # WRONG: keep your existing behavior
+        # -------------------------
+        # WRONG
+        # -------------------------
         self._daily_goal_perfect = False
+        self._typing_attempts = int(getattr(self, "_typing_attempts", 0) or 0) + 1
 
         expected = self._best_candidate_for_feedback(user, vocab)
-        per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
-        mism = self._typing_mismatch_count(user, expected)
-        self._adjust_knowledge_level(vocab, per_char * max(1, mism))
-        self.update_srs(vocab, was_correct=False, quality=0.0)
+
+        if not require_self:
+            # pro Fehlversuch fixer Abzug, kein SRS-Update bis final richtig/skip
+            per_try = float(getattr(labels, "knowledge_delta_typing_wrong_per_attempt", -0.06) or -0.06)
+            self._adjust_knowledge_level(vocab, per_try)
+        else:
+            # bisheriges Verhalten
+            per_char = getattr(labels, "knowledge_delta_typing_wrong_per_char", -0.01)
+            mism = self._typing_mismatch_count(user, expected)
+            self._adjust_knowledge_level(vocab, per_char * max(1, mism))
+            self.update_srs(vocab, was_correct=False, quality=0.0)
 
         self.typing_feedback_label.color = self.colors["text"]
         colored = self._typing_colored_input_markup(user, expected)
@@ -1646,6 +1721,15 @@ class LearnMixin:
             f"Dein Input: {colored}\n"
             f"Lösung: {expected}"
         )
+
+        # Fokus halten
+        if hasattr(self, "force_focus"):
+            self.force_focus(self.typing_input)
+        else:
+            try:
+                self.typing_input.focus = True
+            except Exception:
+                pass
 
     def typing_rate_answer(self, quality: str):
         """
@@ -1705,24 +1789,97 @@ class LearnMixin:
     # ------------------------------------------------------------
 
     def _clean_target_for_syllables(self, raw: str) -> str:
+        """
+        Für Silben-Modus NICHT die Spaces entfernen, weil:
+          - Anzeige soll original bleiben (Here we go!)
+          - auch (to) walk soll sichtbar bleiben
+        Nur Zeilenumbrüche/Tabs normalisieren -> Space.
+        """
         if not raw:
             return ""
-        out = []
-        in_parens = False
-        for ch in raw:
-            if ch == "(":
-                in_parens = True
-                continue
-            if ch == ")":
-                in_parens = False
-                continue
-            if in_parens:
-                continue
-            # Whitespace raus (fix: "un " != "un")
-            if ch.isspace():
-                continue
-            out.append(ch)
-        return "".join(out).strip()
+        s = str(raw).replace("\u00A0", " ")
+        s = re.sub(r"[\r\n\t]+", " ", s)
+        return s
+
+    def syllable_salad_segment_pressed(self, button, _instance=None):
+        if getattr(button, "disabled", False):
+            return
+
+        def norm(s: str) -> str:
+            s = "" if s is None else str(s)
+            # ignore ALL whitespace, case-insensitive
+            return re.sub(r"\s+", "", s).lower()
+
+        w_i = getattr(button, "_word_index", None)
+        if w_i is None or not (0 <= w_i < len(self.syllable_salad_items)):
+            return
+
+        wrong_delta = getattr(labels, "knowledge_delta_syllable_wrong_word", -0.05)
+        correct_delta = getattr(labels, "knowledge_delta_syllable_correct_word", 0.08)
+
+        active = self.syllable_salad_active_word_index
+        if active is None:
+            self.syllable_salad_active_word_index = w_i
+            active = w_i
+
+        active_item = self.syllable_salad_items[active]
+        if active_item.get("finished", False):
+            self.syllable_salad_active_word_index = None
+            return
+
+        exp_idx = int(active_item.get("next_index", 0) or 0)
+        if not (0 <= exp_idx < len(active_item["chunks"])):
+            return
+
+        clicked = norm(getattr(button, "text", ""))
+        expected_norm = norm(active_item["chunks"][exp_idx])
+
+        # If user clicked a chunk from another word:
+        if active != w_i and clicked != expected_norm:
+            other_item = self.syllable_salad_items[w_i]
+            if int(other_item.get("next_index", 0) or 0) == 0 and norm(other_item["chunks"][0]) == clicked:
+                self._reset_syllable_word(active)
+                self.syllable_salad_active_word_index = w_i
+                active = w_i
+                active_item = self.syllable_salad_items[active]
+                exp_idx = int(active_item.get("next_index", 0) or 0)
+                expected_norm = norm(active_item["chunks"][exp_idx])
+            else:
+                button.set_bg_color(self.colors["danger"])
+                self._daily_goal_perfect = False
+                self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
+                Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
+                return
+
+        # NOW: correctness is TEXT-based (so whitespace variants are interchangeable)
+        if clicked == expected_norm:
+            button.set_bg_color(self.colors["success"])
+            button.disabled = True
+
+            # WICHTIG: Immer den "kanonischen" Chunk des aktiven Wortes anhängen,
+            # nicht den geklickten Button-Text (damit Spaces korrekt im Ergebnis landen)
+            canon = active_item["chunks"][exp_idx] or ""
+            active_item["built"] += canon
+            active_item["next_index"] = exp_idx + 1
+
+            lbl = active_item["label"]
+            lbl.text = active_item["base_text"] + active_item["built"]
+            lbl.markup = True
+
+            if active_item["next_index"] >= len(active_item["chunks"]):
+                active_item["finished"] = True
+                self.syllable_salad_finished_count += 1
+                lbl.color = self.colors["success"]
+                self._adjust_knowledge_level(active_item.get("vocab"), correct_delta)
+                self.syllable_salad_active_word_index = None
+
+                if self.syllable_salad_finished_count >= len(self.syllable_salad_items):
+                    Clock.schedule_once(lambda _dt: self._syllable_salad_finish(), 0.3)
+        else:
+            button.set_bg_color(self.colors["danger"])
+            self._daily_goal_perfect = False
+            self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
+            Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
 
     def _split_into_syllable_chunks(self, cleaned: str):
         cleaned = cleaned or ""
@@ -1880,89 +2037,6 @@ class LearnMixin:
                 btn.disabled = False
                 btn.set_bg_color(self.colors["card"])
                 btn.color = self.colors["text"]
-
-    def syllable_salad_segment_pressed(self, button, _instance=None):
-        if getattr(button, "disabled", False):
-            return
-
-        def norm(s: str) -> str:
-            s = "" if s is None else str(s)
-            # ignore ALL whitespace, case-insensitive
-            return re.sub(r"\s+", "", s).lower()
-
-        w_i = getattr(button, "_word_index", None)
-        if w_i is None or not (0 <= w_i < len(self.syllable_salad_items)):
-            return
-
-        wrong_delta = getattr(labels, "knowledge_delta_syllable_wrong_word", -0.05)
-        correct_delta = getattr(labels, "knowledge_delta_syllable_correct_word", 0.08)
-
-        active = self.syllable_salad_active_word_index
-        if active is None:
-            # choose active word by first click (as before)
-            self.syllable_salad_active_word_index = w_i
-            active = w_i
-
-        # active item we are currently building
-        active_item = self.syllable_salad_items[active]
-        if active_item.get("finished", False):
-            self.syllable_salad_active_word_index = None
-            return
-
-        # expected chunk by position
-        exp_idx = int(active_item.get("next_index", 0) or 0)
-        if not (0 <= exp_idx < len(active_item["chunks"])):
-            return
-
-        clicked = norm(getattr(button, "text", ""))
-        expected = norm(active_item["chunks"][exp_idx])
-
-        # If user clicked a chunk from another word:
-        # 1) allow it as shared syllable if it matches expected of ACTIVE word
-        # 2) otherwise keep old "switch word only if user starts new word" behavior
-        if active != w_i and clicked != expected:
-            other_item = self.syllable_salad_items[w_i]
-            # switching allowed only when starting the other word (next_index==0) AND clicking its first chunk (text-based)
-            if int(other_item.get("next_index", 0) or 0) == 0 and norm(other_item["chunks"][0]) == clicked:
-                self._reset_syllable_word(active)
-                self.syllable_salad_active_word_index = w_i
-                active = w_i
-                active_item = self.syllable_salad_items[active]
-                exp_idx = int(active_item.get("next_index", 0) or 0)
-                expected = norm(active_item["chunks"][exp_idx])
-            else:
-                button.set_bg_color(self.colors["danger"])
-                self._daily_goal_perfect = False
-                self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
-                Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
-                return
-
-        # NOW: correctness is TEXT-based (so duplicates are interchangeable)
-        if clicked == expected:
-            button.set_bg_color(self.colors["success"])
-            button.disabled = True
-
-            active_item["next_index"] = exp_idx + 1
-            active_item["built"] += (button.text or "")
-
-            lbl = active_item["label"]
-            lbl.text = active_item["base_text"] + active_item["built"]
-            lbl.markup = True
-
-            if active_item["next_index"] >= len(active_item["chunks"]):
-                active_item["finished"] = True
-                self.syllable_salad_finished_count += 1
-                lbl.color = self.colors["success"]
-                self._adjust_knowledge_level(active_item.get("vocab"), correct_delta)
-                self.syllable_salad_active_word_index = None
-
-                if self.syllable_salad_finished_count >= len(self.syllable_salad_items):
-                    Clock.schedule_once(lambda _dt: self._syllable_salad_finish(), 0.3)
-        else:
-            button.set_bg_color(self.colors["danger"])
-            self._daily_goal_perfect = False
-            self._adjust_knowledge_level(active_item.get("vocab"), wrong_delta)
-            Clock.schedule_once(lambda _dt: button.set_bg_color(self.colors["card"]), 0.25)
 
     def _syllable_salad_finish(self):
         items = getattr(self, "syllable_salad_items", []) or []

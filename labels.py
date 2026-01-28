@@ -247,3 +247,14 @@ daily_goal_learn_label = "Heutiges Ziel: {done}/{target} Karten"
 # Backwards compatibility (older code paths)
 daily_progress_label = "Heutiges Ziel"
 
+# Settings – neue Sektion
+settings_stacks_header = "Stapel & Filter"
+settings_sort_stacks_by_language = "Stapel nach Sprache sortieren"
+settings_global_learn_languages = "Allgemeines Lernen: Sprachen"
+settings_global_learn_languages_button = "Sprachen auswählen…"
+settings_typing_require_self_rating = "Tippen: Selbstbewertung nach richtig"
+
+# Typing – Auto-Scoring
+knowledge_delta_typing_wrong_per_attempt = -0.06
+knowledge_delta_typing_first_try_bonus = 0.03
+knowledge_delta_typing_fail_penalty = 0.04
