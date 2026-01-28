@@ -13,6 +13,8 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
+from kivy.uix.checkbox import CheckBox
+
 
 import labels
 import save
@@ -313,12 +315,142 @@ class StacksMixin:
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
 
+    def _write_export_csv(self, src: str, dest: str, *, include_progress: bool) -> bool:
+        """
+        Writes the export file.
+        - include_progress=True  -> exact copy (current behavior)
+        - include_progress=False -> reset learning fields in the EXPORT only:
+                                   dates -> today, knowledge_level -> 0, streak -> 0
+        """
+        if not src or not dest:
+            return False
+
+        # Default / current behavior
+        if include_progress:
+            try:
+                shutil.copy2(src, dest)
+                return True
+            except Exception as e:
+                log(f"export copy failed: {e}")
+                return False
+
+        # "No progress" export: sanitize only the exported file
+        try:
+            vocab_list, own, foreign, latin, latin_active = save.load_vocab(src)
+        except Exception as e:
+            log(f"export load_vocab failed (fallback to copy): {e}")
+            try:
+                shutil.copy2(src, dest)
+                return True
+            except Exception:
+                return False
+
+        today = datetime.now().date().isoformat()
+
+        cleaned = []
+        for entry in (vocab_list or []):
+            if not isinstance(entry, dict):
+                continue
+
+            row = dict(entry)  # do NOT mutate app data
+
+            # Lernlevel / Fortschritt resetten (nur im Export)
+            row["knowledge_level"] = 0.0
+            row["srs_streak"] = 0
+
+            # Alle Datumswerte auf "heute"
+            row["srs_last_seen"] = today
+            row["srs_due"] = today
+            row["daily_goal_anchor_date"] = today
+
+            # Optional: Anker resetten (steht im CSV-Schema)
+            row["daily_goal_anchor"] = 0
+
+            cleaned.append(row)
+
+        try:
+            save.save_to_vocab(
+                cleaned,
+                dest,
+                own_lang=own or "Deutsch",
+                foreign_lang=foreign or "Englisch",
+                latin_lang=latin or "Latein",
+                latin_active=bool(latin_active),
+            )
+            return True
+        except Exception as e:
+            log(f"export save_to_vocab failed (fallback to copy): {e}")
+            try:
+                shutil.copy2(src, dest)
+                return True
+            except Exception:
+                return False
+
+    def _write_sanitized_export_csv(self, src_path: str, dst_path: str) -> None:
+        """
+        Export ohne Lernstand:
+          - knowledge_level = 0
+          - SRS Felder/Anker auf "heute"
+        """
+        data = save.load_vocab(src_path)
+
+        vocab_list = []
+        own = "Deutsch"
+        foreign = "Englisch"
+        latin = "Latein"
+        latin_active = False
+
+        if isinstance(data, tuple):
+            if len(data) == 5:
+                vocab_list, own, foreign, latin, latin_active = data
+            elif len(data) == 4:
+                vocab_list, own, foreign, latin = data
+            elif len(data) == 3:
+                vocab_list, own, foreign = data
+            elif len(data) >= 1:
+                vocab_list = data[0]
+        elif isinstance(data, dict):
+            vocab_list = data.get("vocab_list", data.get("vocab", [])) or []
+            own = data.get("own_language", own) or own
+            foreign = data.get("foreign_language", foreign) or foreign
+            latin = data.get("latin_language", latin) or latin
+            latin_active = bool(data.get("latin_active", latin_active))
+        else:
+            vocab_list = data or []
+
+        now = datetime.now()
+        today_iso = now.date().isoformat()
+        now_iso = now.isoformat()
+        due_iso = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+        for e in vocab_list:
+            if not isinstance(e, dict):
+                continue
+            e["knowledge_level"] = 0.0
+            e["srs_streak"] = 0
+            e["srs_last_seen"] = now_iso
+            e["srs_due"] = due_iso
+            e["daily_goal_anchor"] = 0
+            e["daily_goal_anchor_date"] = today_iso
+
+        save.save_to_vocab(
+            vocab=vocab_list,
+            filename=dst_path,
+            own_lang=own or "Deutsch",
+            foreign_lang=foreign or "Englisch",
+            latin_lang=latin or "Latein",
+            latin_active=bool(latin_active),
+        )
+
     def export_stack_dialog(self, stack: str, _instance=None):
         """
         Export / Share a stack CSV.
 
-        - Android: opens share sheet (Intent / plyer fallback) for the CSV
-        - Desktop: save-as dialog (Tk) + fallback folder chooser
+        - Erst Dialog: "Lernfortschritt mitexportieren?"
+        - Wenn NEIN: knowledge_level -> 0 und Datumsfelder -> heute
+        - Danach wie gehabt:
+          - Android: share sheet
+          - Desktop: save-as
         """
         # Resolve source file
         try:
@@ -343,128 +475,199 @@ class StacksMixin:
             ).open()
             return
 
-        # --------------------------
-        # ANDROID: share sheet
-        # --------------------------
-        if kivy_platform == "android":
-            share_path = src
+        # ------------------------------------------------------------
+        # 1) Optionen-Dialog (muss VOR dem Export kommen)
+        # ------------------------------------------------------------
+        content = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(12))
 
-            # copy to a dedicated export dir (more predictable filename)
-            try:
-                from pathlib import Path
-                from vokaba.core.paths import data_dir
+        title_lbl = self.make_text_label(
+            "Export-Optionen",
+            halign="center",
+            size_hint_y=None,
+            height=dp(28),
+        )
+        title_lbl.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
+        content.add_widget(title_lbl)
 
-                export_dir = Path(data_dir()) / "exports"
-                export_dir.mkdir(parents=True, exist_ok=True)
-                dst = export_dir / os.path.basename(src)
-                shutil.copy2(src, str(dst))
-                share_path = str(dst)
-            except Exception as e:
-                log(f"export temp copy failed: {e}")
+        hint_lbl = self.make_text_label(
+            "Wenn du den Lernfortschritt nicht mitexportierst, wird die Datei so vorbereitet,\n"
+            "dass sie wie „neu“ ist: alle Lernlevel = 0 und alle Datumsfelder = heute.",
+            halign="center",
+            size_hint_y=None,
+            height=dp(90),
+        )
+        hint_lbl.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
+        content.add_widget(hint_lbl)
 
-            ok = False
+        row = BoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(44))
+        cb = CheckBox(active=True, size_hint=(None, None), size=(dp(36), dp(36)))
+        row.add_widget(cb)
 
-            # 1) Prefer your Android Intent helper (FileProvider/text fallback)
-            try:
-                if hasattr(self, "run_share_file_dialog"):
-                    ok = bool(self.run_share_file_dialog(share_path, mime_type="text/csv", title="CSV teilen"))
-            except Exception as e:
-                log(f"run_share_file_dialog failed: {e}")
-                ok = False
-
-            # 2) plyer.share fallback
-            if not ok and plyer_share is not None:
-                try:
-                    try:
-                        plyer_share.share(filepath=share_path, mime_type="text/csv", title="CSV teilen")
-                    except TypeError:
-                        plyer_share.share(filepath=share_path, title="CSV teilen")
-                    ok = True
-                except Exception as e:
-                    log(f"plyer_share failed: {e}")
-                    ok = False
-
-            if not ok:
-                err = getattr(self, "_last_share_error", "") or ""
-                Popup(
-                    title="Export fehlgeschlagen",
-                    content=self.make_text_label(
-                        "Der Share-Dialog konnte nicht geöffnet werden.\n\n"
-                        f"Datei: {share_path}\n\n"
-                        f"Details: {err or 'keine Details verfügbar'}",
-                        halign="center",
-                    ),
-                    size_hint=(0.9, None),
-                    height=dp(340),
-                ).open()
-
-            return
-
-        # --------------------------
-        # DESKTOP: save-as dialog
-        # --------------------------
-        def do_export(dest_path: str):
-            if not dest_path:
-                return
-            dest = str(dest_path)
-            if not dest.lower().endswith(".csv"):
-                dest += ".csv"
-
-            try:
-                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-                shutil.copy2(src, dest)
-                Popup(
-                    title="Export erfolgreich",
-                    content=self.make_text_label(f"Exportiert nach:\n{dest}", halign="center"),
-                    size_hint=(0.9, None),
-                    height=dp(240),
-                ).open()
-            except Exception as e:
-                Popup(
-                    title="Export fehlgeschlagen",
-                    content=self.make_text_label(
-                        f"Konnte nicht exportieren.\n\nQuelle: {src}\nZiel: {dest}\n\nFehler: {e}",
-                        halign="center",
-                    ),
-                    size_hint=(0.9, None),
-                    height=dp(340),
-                ).open()
-
-        def on_sel(selection):
-            if selection:
-                Clock.schedule_once(lambda _dt: do_export(selection[0]), 0)
-
-        # try system save dialog
-        try:
-            if hasattr(self, "run_save_file_dialog") and self.run_save_file_dialog(
-                    on_sel, default_filename=os.path.basename(src), title="CSV exportieren"
-            ):
-                return
-        except Exception as e:
-            log(f"System save dialog failed: {e}")
-
-        # fallback: choose a folder and copy into it
-        chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=True)
-        content = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
-        content.add_widget(chooser)
-
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
-        cancel_btn = self.make_secondary_button(getattr(labels, "import_export_cancel", "Abbrechen"),
-                                                size_hint=(0.5, 1))
-        ok_btn = self.make_primary_button("In Ordner exportieren", size_hint=(0.5, 1))
-        row.add_widget(cancel_btn)
-        row.add_widget(ok_btn)
+        cb_lbl = self.make_text_label(
+            "Lernfortschritt mitexportieren (Lernlevel & Wiederholungs-Status)",
+            halign="left",
+        )
+        cb_lbl.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
+        row.add_widget(cb_lbl)
         content.add_widget(row)
 
-        popup = Popup(title="Export-Ordner wählen", content=content, size_hint=(0.9, 0.9))
+        btn_row = BoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(44))
+        cancel_btn = self.make_secondary_button(getattr(labels, "cancel", "Abbrechen"), size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button("Export starten", size_hint=(0.5, 1))
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(ok_btn)
+        content.add_widget(btn_row)
 
-        def _ok(*_a):
-            if chooser.selection:
-                folder = chooser.selection[0]
-                do_export(os.path.join(folder, os.path.basename(src)))
+        popup = Popup(
+            title="",
+            content=content,
+            size_hint=(0.92, None),
+            height=dp(300),
+        )
+
+        def start_export(include_stats: bool):
+            # --------------------------
+            # ANDROID: share sheet
+            # --------------------------
+            if kivy_platform == "android":
+                share_path = src
+
+                # copy to a dedicated export dir (more predictable filename)
+                try:
+                    from pathlib import Path
+                    from vokaba.core.paths import data_dir
+
+                    export_dir = Path(data_dir()) / "exports"
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    dst = export_dir / os.path.basename(src)
+
+                    if include_stats:
+                        shutil.copy2(src, str(dst))
+                    else:
+                        self._write_sanitized_export_csv(src, str(dst))
+
+                    share_path = str(dst)
+                except Exception as e:
+                    log(f"export temp copy failed: {e}")
+                    share_path = src  # fallback
+
+                ok = False
+
+                # 1) Prefer your Android Intent helper (FileProvider/text fallback)
+                try:
+                    if hasattr(self, "run_share_file_dialog"):
+                        ok = bool(self.run_share_file_dialog(share_path, mime_type="text/csv", title="CSV teilen"))
+                except Exception as e:
+                    log(f"run_share_file_dialog failed: {e}")
+                    ok = False
+
+                # 2) plyer.share fallback
+                if not ok and plyer_share is not None:
+                    try:
+                        try:
+                            plyer_share.share(filepath=share_path, mime_type="text/csv", title="CSV teilen")
+                        except TypeError:
+                            plyer_share.share(filepath=share_path, title="CSV teilen")
+                        ok = True
+                    except Exception as e:
+                        log(f"plyer_share failed: {e}")
+                        ok = False
+
+                if not ok:
+                    err = getattr(self, "_last_share_error", "") or ""
+                    Popup(
+                        title="Export fehlgeschlagen",
+                        content=self.make_text_label(
+                            "Der Share-Dialog konnte nicht geöffnet werden.\n\n"
+                            f"Datei: {share_path}\n\n"
+                            f"Details: {err or 'keine Details verfügbar'}",
+                            halign="center",
+                        ),
+                        size_hint=(0.9, None),
+                        height=dp(340),
+                    ).open()
+
+                return
+
+            # --------------------------
+            # DESKTOP: save-as dialog
+            # --------------------------
+            def do_export(dest_path: str):
+                if not dest_path:
+                    return
+                dest = str(dest_path)
+                if not dest.lower().endswith(".csv"):
+                    dest += ".csv"
+
+                try:
+                    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                    if include_stats:
+                        shutil.copy2(src, dest)
+                    else:
+                        self._write_sanitized_export_csv(src, dest)
+
+                    Popup(
+                        title="Export erfolgreich",
+                        content=self.make_text_label(f"Exportiert nach:\n{dest}", halign="center"),
+                        size_hint=(0.9, None),
+                        height=dp(240),
+                    ).open()
+                except Exception as e:
+                    Popup(
+                        title="Export fehlgeschlagen",
+                        content=self.make_text_label(
+                            f"Konnte nicht exportieren.\n\nQuelle: {src}\nZiel: {dest}\n\nFehler: {e}",
+                            halign="center",
+                        ),
+                        size_hint=(0.9, None),
+                        height=dp(340),
+                    ).open()
+
+            def on_sel(selection):
+                if selection:
+                    Clock.schedule_once(lambda _dt: do_export(selection[0]), 0)
+
+            # try system save dialog
+            try:
+                if hasattr(self, "run_save_file_dialog") and self.run_save_file_dialog(
+                        on_sel, default_filename=os.path.basename(src), title="CSV exportieren"
+                ):
+                    return
+            except Exception as e:
+                log(f"System save dialog failed: {e}")
+
+            # fallback: choose a folder and copy into it
+            chooser = FileChooserIconView(path=os.path.expanduser("~"), dirselect=True)
+            content2 = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(8))
+            content2.add_widget(chooser)
+
+            row2 = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
+            cancel_btn2 = self.make_secondary_button(getattr(labels, "cancel", "Abbrechen"), size_hint=(0.5, 1))
+            ok_btn2 = self.make_primary_button("In Ordner exportieren", size_hint=(0.5, 1))
+            row2.add_widget(cancel_btn2)
+            row2.add_widget(ok_btn2)
+            content2.add_widget(row2)
+
+            popup2 = Popup(title="CSV exportieren", content=content2, size_hint=(0.9, 0.9))
+
+            def _ok2(*_a):
+                if chooser.selection:
+                    folder = chooser.selection[0]
+                    dest = os.path.join(folder, os.path.basename(src))
+                    do_export(dest)
+                popup2.dismiss()
+
+            ok_btn2.bind(on_press=_ok2)
+            cancel_btn2.bind(on_press=lambda *_a: popup2.dismiss())
+            popup2.open()
+
+        def _on_ok(*_a):
+            include_stats = bool(cb.active)
             popup.dismiss()
+            # wichtig: Export erst im nächsten Frame starten, damit der Dialog garantiert “vorher” sichtbar war
+            Clock.schedule_once(lambda _dt: start_export(include_stats), 0)
 
-        ok_btn.bind(on_press=_ok)
+        ok_btn.bind(on_press=_on_ok)
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
 

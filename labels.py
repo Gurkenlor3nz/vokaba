@@ -258,3 +258,13 @@ settings_typing_require_self_rating = "Tippen: Selbstbewertung nach richtig"
 knowledge_delta_typing_wrong_per_attempt = -0.06
 knowledge_delta_typing_first_try_bonus = 0.03
 knowledge_delta_typing_fail_penalty = 0.04
+
+export_popup_title = "Export"
+export_popup_intro = "Du kannst wählen, ob dein Lernfortschritt in der Exportdatei enthalten sein soll."
+export_checkbox_include_progress = "Lernfortschritt (Lernlevel) mit exportieren"
+export_hint_reset = (
+    "Wenn deaktiviert, wird die Exportdatei zurückgesetzt: "
+    "alle Datumswerte werden auf heute gesetzt und alle Lernlevel auf 0.\n"
+    "Deine Daten in der App bleiben unverändert."
+)
+export_confirm_button = "Exportieren"

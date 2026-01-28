@@ -1,6 +1,5 @@
 import os
 import shutil
-from jnius import cast
 from kivy.metrics import dp, sp
 from kivy.core.window import Window
 from kivy.clock import Clock
@@ -440,7 +439,7 @@ class UIFactoryMixin:
         Funktioniert ohne dass die App Ordner browsen können muss.
         """
         try:
-            from jnius import autoclass
+            from jnius import autoclass, cast
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             activity = PythonActivity.mActivity
             Uri = autoclass("android.net.Uri")
@@ -522,7 +521,7 @@ class UIFactoryMixin:
             pass
 
         try:
-            from jnius import autoclass
+            from jnius import autoclass, cast
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             activity = PythonActivity.mActivity
 
