@@ -1,5 +1,6 @@
 import os
 import shutil
+from jnius import cast
 from kivy.metrics import dp, sp
 from kivy.core.window import Window
 from kivy.clock import Clock
@@ -571,7 +572,8 @@ class UIFactoryMixin:
 
         def _start(intent_obj):
             try:
-                chooser = Intent.createChooser(intent_obj, title)
+                String = autoclass("java.lang.String")
+                chooser = Intent.createChooser(intent_obj, cast("java.lang.CharSequence", String(title or "Teilen")))
                 if run_on_ui_thread is not None:
                     @run_on_ui_thread
                     def _go():

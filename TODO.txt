@@ -16,6 +16,6 @@ textbox clear, nach falscher eingabe bei tippen
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 update, ohne alle dateien zu verlieren bei android
 export button fixen
-
+beim export einen kleinen dialog öffnen, der fragt, ob die wissens-scores mitexportiert werden sollen. bei nein, einfach alle auf 0,0 setzen
 
 PVP gegen andere
