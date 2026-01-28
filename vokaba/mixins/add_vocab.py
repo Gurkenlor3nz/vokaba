@@ -118,7 +118,7 @@ class AddVocabMixin:
 
         # Swap button (top-left)
         top_left = AnchorLayout(anchor_x="left", anchor_y="top", padding=30 * pad_mul)
-        top_left.add_widget(self.make_icon_button("assets/swap_icon.png", on_press=self._swap_add_vocab_fields, size=dp(56)))
+        top_left.add_widget(self.make_icon_button("assets/swap_icon_black.png", on_press=self._swap_add_vocab_fields, size=dp(56)))
         self.window.add_widget(top_left)
 
         # Back button (top-right)
