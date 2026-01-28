@@ -118,7 +118,7 @@ class AddVocabMixin:
 
         # Swap button (top-left)
         top_left = AnchorLayout(anchor_x="left", anchor_y="top", padding=30 * pad_mul)
-        top_left.add_widget(self.make_icon_button("assets/swap_icon_black.png", on_press=self._swap_add_vocab_fields, size=dp(56)))
+        top_left.add_widget(self.make_icon_button("assets/swap_icon.png", on_press=self._swap_add_vocab_fields, size=dp(56)))
         self.window.add_widget(top_left)
 
         # Back button (top-right)
@@ -179,21 +179,55 @@ class AddVocabMixin:
 
     def _swap_add_vocab_fields(self, _instance=None):
         """
-        Swapped nur die Bedeutung/Labels der beiden Hauptfelder.
-        UI bleibt stabil, Tabben bleibt stabil, aber Reihenfolge (Eigen/Fremd) wirkt getauscht.
+        Crash-sicherer Swap:
+        - toggelt die Bedeutung (swapped-Flag)
+        - tauscht Labels
+        - (optional) tauscht auch die aktuell eingegebenen Texte der beiden Felder
+        - erhält Focus sauber
         """
-        self._add_vocab_swapped = not bool(getattr(self, "_add_vocab_swapped", False))
+        try:
+            self._add_vocab_swapped = not bool(getattr(self, "_add_vocab_swapped", False))
 
-        if not hasattr(self, "_lbl_foreign") or not hasattr(self, "_lbl_own"):
+            # Widgets prüfen (Android kann hier manchmal timing-sensitiv sein)
+            lbl_f = getattr(self, "_lbl_foreign", None)
+            lbl_o = getattr(self, "_lbl_own", None)
+            ti_f = getattr(self, "add_foreign_language", None)
+            ti_o = getattr(self, "add_own_language", None)
+
+            if lbl_f is None or lbl_o is None or ti_f is None or ti_o is None:
+                return
+
+            # Focus merken
+            focused_was_foreign = bool(getattr(ti_f, "focus", False))
+
+            # OPTIONAL: Texte tauschen (damit es sich "echt" wie Swap anfühlt)
+            a = ti_f.text or ""
+            b = ti_o.text or ""
+            ti_f.text = b
+            ti_o.text = a
+
+            # Labels tauschen (Bedeutung)
+            if self._add_vocab_swapped:
+                lbl_f.text = getattr(labels, "add_own_language", "Eigene Sprache:")
+                lbl_o.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
+            else:
+                lbl_f.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
+                lbl_o.text = getattr(labels, "add_own_language", "Eigene Sprache:")
+
+            # Focus zurücksetzen (verhindert Android-Input-Glitches)
+            def _refocus(_dt):
+                try:
+                    ti_f.focus = focused_was_foreign
+                    ti_o.focus = not focused_was_foreign
+                except Exception:
+                    pass
+
+            Clock.schedule_once(_refocus, 0)
+
+        except Exception as e:
+            # NIE crashen lassen – nur loggen
+            log(f"swap_add_vocab_fields failed: {e}")
             return
-
-        if self._add_vocab_swapped:
-            self._lbl_foreign.text = getattr(labels, "add_own_language", "Eigene Sprache:")
-            self._lbl_own.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
-        else:
-            self._lbl_foreign.text = getattr(labels, "add_foreign_language", "Fremdsprache:")
-            self._lbl_own.text = getattr(labels, "add_own_language", "Eigene Sprache:")
-
 
     def on_key_down(self, _window, key, _scancode, _codepoint, modifiers):
         """
