@@ -21,7 +21,7 @@ beim buchstabieren müssen Leerzeichen auch Felder sein
 
 update, ohne alle dateien zu verlieren bei android
 export button fixen
-
+revew von Android an oberer bildschirm hälfte wegen tastatur
 
 
 

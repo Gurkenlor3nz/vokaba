@@ -322,15 +322,22 @@ class OcrImportMixin:
 
     def _ocr_pick_image(self, _instance=None):
         def on_sel(selection):
+            log(f"ocr picker selection raw: {selection!r}")
+
             if not selection:
+                self._ocr_setup_error.text = "Keine Auswahl vom Dateidialog erhalten."
                 return
-            if kivy_platform == "android":
-                self._ensure_android_read_images()
+
+            if isinstance(selection, (str, bytes)):
+                selection = [selection]
+
             src = selection[0]
             local = self._ocr_copy_to_local_file(src)
+
             if not local:
-                self._ocr_setup_error.text = "Konnte Bild nicht öffnen."
+                self._ocr_setup_error.text = "Konnte Bild nicht öffnen (Copy fehlgeschlagen)."
                 return
+
             self._ocr_image_path = local
             self._ocr_selected_label.text = os.path.basename(local) if local else "Bild gewählt"
             self._ocr_setup_error.text = ""
@@ -423,8 +430,10 @@ class OcrImportMixin:
                 import shutil
                 shutil.copy2(src, str(dest))
                 ok = True
-        except Exception:
+        except Exception as e:
+            log(f"ocr copy failed: {e} | src={src!r} -> dest={str(dest)!r}")
             ok = False
+
 
         return str(dest) if ok and dest.exists() else ""
 
@@ -454,6 +463,18 @@ class OcrImportMixin:
         self._ocr_cancel_token = token
 
         self._ocr_loading_screen()
+
+        # direkt nach: self._ocr_loading_screen()
+
+        if kivy_platform == "android":
+            try:
+                from vokaba.ocr_android_mlkit import warmup_mlkit
+                warmup_mlkit()
+            except Exception as e:
+                msg = f"OCR Fehler: {e}"
+                log(msg)
+                self._ocr_show_error(msg)
+                return
 
         th = threading.Thread(
             target=self._ocr_worker,
@@ -531,55 +552,70 @@ class OcrImportMixin:
             mapping: List[str],
     ):
         try:
-            cache = Path(data_dir()) / "paddleocr_models"
-            cache.mkdir(parents=True, exist_ok=True)
-
-            os.environ.setdefault("DISABLE_AUTO_LOGGING_CONFIG", "1")
-            os.environ.setdefault("PADDLEX_HOME", str(cache))
-            os.environ.setdefault("PADDLEX_CACHE_DIR", str(cache))
-
-            import sys
-
-            out_json = Path(data_dir()) / "ocr_cache" / f"ocr_out_{int(time.time())}.json"
-            try:
-                out_json.parent.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
-
-            cmd = [
-                sys.executable, "-m", "vokaba.ocr_runner",
-                "--image", str(image_path),
-                "--lang", str(lang),
-                "--cache-dir", str(cache),
-                "--out", str(out_json),
-                "--no-source-check",
-            ]
-            if use_textline_orientation:
-                cmd.append("--textline-ori")
-
+            # -------------------------
+            # ANDROID: ML Kit (on-device)
+            # -------------------------
             if kivy_platform == "android":
-                from paddleocr import PaddleOCR
+                from vokaba.ocr_android_mlkit import mlkit_to_paddle_pages_async
+                json_pages = mlkit_to_paddle_pages_async(str(image_path), timeout_sec=60.0)
 
-                ocr = PaddleOCR(lang=str(lang), use_textline_orientation=bool(use_textline_orientation))
-                results = ocr.predict(str(image_path), use_textline_orientation=bool(use_textline_orientation))
-
-                json_pages = []
-                for res in results or []:
-                    j = getattr(res, "json", None)
-                    if isinstance(j, dict):
-                        json_pages.append(j)
-
+            # -------------------------
+            # DESKTOP: PaddleOCR (subprocess runner)
+            # -------------------------
             else:
+                cache = Path(data_dir()) / "paddleocr_models"
+                cache.mkdir(parents=True, exist_ok=True)
+
+                os.environ.setdefault("DISABLE_AUTO_LOGGING_CONFIG", "1")
+                os.environ.setdefault("PADDLEX_HOME", str(cache))
+                os.environ.setdefault("PADDLEX_CACHE_DIR", str(cache))
+
+                import sys
+
+                out_json = Path(data_dir()) / "ocr_cache" / f"ocr_out_{int(time.time())}.json"
+                try:
+                    out_json.parent.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+
+                is_frozen = bool(getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"))
+
+                if is_frozen:
+                    cmd = [
+                        sys.executable,
+                        "--ocr-runner",
+                        "--image", str(image_path),
+                        "--lang", str(lang),
+                        "--cache-dir", str(cache),
+                        "--out", str(out_json),
+                        "--no-source-check",
+                    ]
+                else:
+                    cmd = [
+                        sys.executable,
+                        "-m", "vokaba.ocr_runner",
+                        "--image", str(image_path),
+                        "--lang", str(lang),
+                        "--cache-dir", str(cache),
+                        "--out", str(out_json),
+                        "--no-source-check",
+                    ]
+
+                if use_textline_orientation:
+                    cmd.append("--textline-ori")
+
                 proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
                 if proc.returncode != 0:
                     err = (proc.stderr or proc.stdout or "").strip()
+                    low = err.lower()
 
-                    # If lang is unsupported on this server, retry with English.
-                    if (
-                            "not recognized" in err.lower() or "unsupported" in err.lower() or "unknown" in err.lower()) and lang != "en":
+                    lang_problem = ("lang" in low) and (
+                                "unsupported" in low or "unknown" in low or "not recognized" in low)
+
+                    # fallback to english if lang not supported
+                    if lang_problem and lang != "en":
                         cmd2 = cmd[:]  # copy
-                        # replace --lang value
                         for i in range(len(cmd2) - 1):
                             if cmd2[i] == "--lang":
                                 cmd2[i + 1] = "en"
@@ -606,6 +642,9 @@ class OcrImportMixin:
                 except Exception:
                     pass
 
+            # -------------------------
+            # Common parse -> rows -> entries
+            # -------------------------
             rows = self._ocr_rows_from_paddle_json(json_pages, n_cols=n_cols)
             entries = self._ocr_rows_to_vocab_entries(rows, mapping=mapping)
 
@@ -821,6 +860,9 @@ class OcrImportMixin:
         self._ocr_entries = entries or []
         self._ocr_index = 0
 
+        # >>> FIX: total einmal festhalten (konstant beim Durchklicken)
+        self._ocr_total_all = len(self._ocr_entries)
+
         if not self._ocr_entries:
             Popup(
                 title="Keine Vokabeln gefunden",
@@ -835,7 +877,6 @@ class OcrImportMixin:
             self._ocr_setup_screen()
             return
 
-        # IMPORTANT: enable review key handling
         self._ocr_review_active = True
         self._bind_ocr_review_keys()
 
@@ -854,43 +895,59 @@ class OcrImportMixin:
         latin_active = bool(save.read_languages(self.vocab_root() + stack)[3])
 
         top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=30 * pad_mul)
-        top_right.add_widget(self.make_icon_button("assets/back_button.png", on_press=lambda _i: self._ocr_setup_screen(), size=dp(56)))
+        top_right.add_widget(
+            self.make_icon_button("assets/back_button.png", on_press=lambda _i: self._ocr_setup_screen(), size=dp(56)))
         self.window.add_widget(top_right)
 
         center = AnchorLayout(anchor_x="center", anchor_y="center", padding=40 * pad_mul)
-        card = RoundedCard(orientation="vertical", size_hint=(0.92, 0.85), padding=dp(16), spacing=dp(12), bg_color=self.colors["card"])
+        card = RoundedCard(orientation="vertical", size_hint=(0.92, 0.85), padding=dp(16), spacing=dp(12),
+                           bg_color=self.colors["card"])
 
-        total = len(self._ocr_entries)
+        live_total = len(getattr(self, "_ocr_entries", []) or [])
+
+        # >>> FIX: total aus gespeichertem "Gesamt" nehmen (nicht aus idx / remaining)
+        total_all = int(getattr(self, "_ocr_total_all", 0) or 0)
+        if total_all <= 0:
+            total_all = live_total
+            self._ocr_total_all = total_all
+
         idx = int(getattr(self, "_ocr_index", 0) or 0)
-        idx = max(0, min(total - 1, idx))
+        if live_total <= 0:
+            self._ocr_review_active = False
+            self._unbind_ocr_review_keys()
+            self._ocr_setup_screen()
+            return
+        idx = max(0, min(live_total - 1, idx))
 
-        card.add_widget(self.make_title_label(f"Review {idx+1}/{total}", size_hint_y=None, height=dp(40)))
+        current = min(idx + 1, total_all)
+        card.add_widget(self.make_title_label(f"Review {current}/{total_all}", size_hint_y=None, height=dp(40)))
 
         entry = self._ocr_entries[idx]
 
         card.add_widget(self.make_title_label("Fremdsprache", size_hint_y=None, height=dp(30)))
-        self._ocr_in_foreign = self.style_textinput(TextInput(text=entry.get("foreign_language", ""), multiline=False, size_hint=(1, None), height=input_h))
+        self._ocr_in_foreign = self.style_textinput(
+            TextInput(text=entry.get("foreign_language", ""), multiline=False, size_hint=(1, None), height=input_h))
         card.add_widget(self._ocr_in_foreign)
 
         card.add_widget(self.make_title_label("Eigene Sprache", size_hint_y=None, height=dp(30)))
-        self._ocr_in_own = self.style_textinput(TextInput(text=entry.get("own_language", ""), multiline=False, size_hint=(1, None), height=input_h))
+        self._ocr_in_own = self.style_textinput(
+            TextInput(text=entry.get("own_language", ""), multiline=False, size_hint=(1, None), height=input_h))
         card.add_widget(self._ocr_in_own)
 
         if latin_active:
             card.add_widget(self.make_title_label("Dritte Spalte", size_hint_y=None, height=dp(30)))
-            self._ocr_in_third = self.style_textinput(TextInput(text=entry.get("latin_language", ""), multiline=False, size_hint=(1, None), height=input_h))
+            self._ocr_in_third = self.style_textinput(
+                TextInput(text=entry.get("latin_language", ""), multiline=False, size_hint=(1, None), height=input_h))
             card.add_widget(self._ocr_in_third)
         else:
             self._ocr_in_third = None
 
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(56), spacing=dp(10))
 
-        # sauber: echte Danger-Variante benutzen (bleibt rund)
         if hasattr(self, "make_danger_button"):
             del_btn = self.make_danger_button("Löschen", size_hint=(0.22, 1))
         else:
             del_btn = self.make_secondary_button("Löschen", size_hint=(0.22, 1))
-            # fallback: falls RoundedButton -> set_bg_color
             if hasattr(del_btn, "set_bg_color"):
                 del_btn.set_bg_color(self.colors["danger"])
             else:
@@ -914,7 +971,6 @@ class OcrImportMixin:
         row.add_widget(ok_btn)
         card.add_widget(row)
 
-        # smaller + safer placement (bottom right)
         done_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(46), spacing=dp(10))
         done_row.add_widget(Widget(size_hint=(0.62, 1)))
 
@@ -924,7 +980,6 @@ class OcrImportMixin:
         done_row.add_widget(done_btn)
         card.add_widget(done_row)
 
-        # <<< FEHLTE: Card in Center und Center ins Window hängen >>>
         center.add_widget(card)
         self.window.add_widget(center)
 
@@ -980,6 +1035,9 @@ class OcrImportMixin:
                 self._ocr_entries.pop(idx)
             except Exception:
                 pass
+
+        # >>> optional/sauber: wenn du löschst, Gesamtzahl anpassen
+        self._ocr_total_all = len(getattr(self, "_ocr_entries", []) or [])
 
         if not getattr(self, "_ocr_entries", None):
             self._ocr_review_active = False
