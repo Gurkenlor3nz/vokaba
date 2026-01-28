@@ -1,6 +1,6 @@
 0.1
 beim export einen kleinen dialog öffnen, der fragt, ob die wissens-scores mitexportiert werden sollen. bei nein, einfach alle auf 0,0 setzen
-
+icons
 
 0.2
 textbox clear, nach falscher eingabe bei tippen
