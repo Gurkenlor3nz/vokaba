@@ -8,7 +8,7 @@ os.environ.setdefault("KIVY_NO_ARGS", "1")
 
 __version__ = "0.0.1"
 __author__ = "Gurkenlorenz"
-__email__ = "theo@theolemil.de"
+__email__ = "vokabaa@gmail.com"
 __status__ = "Development"
 
 
