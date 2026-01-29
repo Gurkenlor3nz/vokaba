@@ -1,3 +1,8 @@
+Hotfix
+bild geht nicht, wenn man direkt auf import drückt, nur von galerie geht es nicht
+crash beim metadaten speichern, speichert trotsdem
+warnen, dass nur die angegebenen spalten gezeigt werden müssen auf ocr
+
 0.2
 textbox clear, nach falscher eingabe bei tippen
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
@@ -5,6 +10,7 @@ anki- Csv support
 splash screen ändern
 icons
 inhalt von klammern ohne klammern wird als korrekt gewertet, ohne inhalt von klammern aber auch.
+unknown character bei export finished popup
 
 GUI rework 
 
