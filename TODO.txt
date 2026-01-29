@@ -4,6 +4,9 @@ icons
 0.2
 textbox clear, nach falscher eingabe bei tippen
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
+anki- Csv support
+
+GUI rework 
 
 -mal schauen wann-
 update, ohne alle dateien zu verlieren bei android
