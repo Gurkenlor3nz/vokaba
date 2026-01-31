@@ -433,6 +433,68 @@ class UIFactoryMixin:
             s = s[7:]
         return s
 
+    def ensure_android_read_images(self) -> None:
+        """
+        Request runtime permission to read images (Android 13+ needs READ_MEDIA_IMAGES).
+        Safe no-op on desktop.
+        """
+        if kivy_platform != "android":
+            return
+        try:
+            from jnius import autoclass
+            from android.permissions import request_permissions, Permission
+            VERSION = autoclass("android.os.Build$VERSION")
+            sdk = int(VERSION.SDK_INT)
+            if sdk >= 33:
+                request_permissions(["android.permission.READ_MEDIA_IMAGES"])
+            else:
+                request_permissions([Permission.READ_EXTERNAL_STORAGE])
+        except Exception as e:
+            try:
+                log(f"ensure_android_read_images failed: {e}")
+            except Exception:
+                pass
+
+    def guess_image_extension(self, src: str) -> str:
+        """
+        Best-effort extension guess for image sources:
+          - normal file paths: based on suffix
+          - android content:// URIs: based on MIME type (ContentResolver.getType)
+        Returns: '.jpg' / '.png' / '.webp' / '.heic' (fallback '.png')
+        """
+        low = (src or "").strip().lower()
+        if low.endswith(".jpg") or low.endswith(".jpeg"):
+            return ".jpg"
+        if low.endswith(".png"):
+            return ".png"
+        if low.endswith(".webp"):
+            return ".webp"
+        if low.endswith(".heic") or low.endswith(".heif"):
+            return ".heic"
+
+        if kivy_platform == "android" and low.startswith("content://"):
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                activity = PythonActivity.mActivity
+                Uri = autoclass("android.net.Uri")
+                uri = Uri.parse(src)
+                cr = activity.getContentResolver()
+                mime = cr.getType(uri)
+                mime = str(mime or "").lower()
+                if "jpeg" in mime or "jpg" in mime:
+                    return ".jpg"
+                if "png" in mime:
+                    return ".png"
+                if "webp" in mime:
+                    return ".webp"
+                if "heic" in mime or "heif" in mime:
+                    return ".heic"
+            except Exception:
+                pass
+
+        return ".png"
+
     def _android_copy_content_uri_to_file(self, uri_str: str, dest_path: str) -> bool:
         """
         Kopiert content://... via ContentResolver in eine echte Datei (dest_path).
@@ -712,3 +774,4 @@ class UIFactoryMixin:
                 pass
 
         return False
+

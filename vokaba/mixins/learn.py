@@ -1433,20 +1433,128 @@ class LearnMixin:
         parts = no_par.split()
         return parts[-1] if parts else no_par
 
-    def _is_correct_typed_answer(self, typed: str, vocab: dict) -> bool:
-        foreign = vocab.get("foreign_language", "") or ""
-        parts = re.split(r"[;,/]", foreign)
-        candidates = [p.strip() for p in parts if p.strip()] or [foreign]
 
+    def _split_outside_parentheses(self, text: str, seps={";", ",", "/"}) -> list[str]:
+        """
+        Split text by separators, but IGNORE separators inside parentheses.
+        Example: "(to, in order to) save, keep" =>
+          ["(to, in order to) save", "keep"]
+        """
+        if text is None:
+            return [""]
+        s = str(text)
+        out = []
+        buf = []
+        depth = 0
+        for ch in s:
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+
+            if depth == 0 and ch in seps:
+                part = "".join(buf).strip()
+                if part:
+                    out.append(part)
+                buf = []
+                continue
+
+            buf.append(ch)
+
+        last = "".join(buf).strip()
+        if last:
+            out.append(last)
+
+        return out or [s.strip()]
+
+    def _expand_parenthetical_variants(self, text: str) -> list[str]:
+        """
+        Expands optional parentheses:
+          '(to) save' -> ['save', 'to save']
+          '(to, in order to) save' -> ['save', 'to save', 'in order to save']
+        Multiple parentheses are combined (cartesian product), but typically small.
+        """
+        if text is None:
+            return [""]
+        s = str(text)
+
+        variants: list[str] = []
+
+        def rec(prefix: str, rest: str):
+            m = re.search(r"\(([^)]*)\)", rest)
+            if not m:
+                variants.append(prefix + rest)
+                return
+
+            before = rest[: m.start()]
+            inside = (m.group(1) or "").strip()
+            after = rest[m.end() :]
+
+            # comma-separated options inside parentheses
+            opts = []
+            if inside:
+                for part in inside.split(","):
+                    part = part.strip()
+                    if part:
+                        opts.append(part)
+
+            # '' means "omit the parentheses entirely"
+            for opt in ([""] + opts):
+                rec(prefix + before + (opt if opt else ""), after)
+
+        rec("", s)
+
+        # cleanup spacing + dedupe (preserve order)
+        seen = set()
+        out = []
+        for v in variants:
+            v2 = re.sub(r"\s+", " ", v).strip()
+            if not v2:
+                continue
+            key = v2.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(v2)
+
+        return out or [re.sub(r"\s+", " ", s).strip()]
+
+    def _best_variant_for_expected(self, typed: str, expected: str) -> str:
+        """Pick the expected-variant (expanded from parentheses) that best matches the user's input."""
+        typed_norm = self._normalize_for_compare(typed)
+        if not typed_norm:
+            # default: expected without parentheses
+            vars_ = self._expand_parenthetical_variants(expected)
+            return vars_[0] if vars_ else (expected or "")
+
+        try:
+            import difflib
+            best_v = expected or ""
+            best_score = -1.0
+            for v in self._expand_parenthetical_variants(expected):
+                sc = difflib.SequenceMatcher(None, typed_norm, self._normalize_for_compare(v)).ratio()
+                if sc > best_score:
+                    best_score = sc
+                    best_v = v
+            return best_v
+        except Exception:
+            vars_ = self._expand_parenthetical_variants(expected)
+            return vars_[0] if vars_ else (expected or "")
+
+
+    def _is_correct_typed_answer(self, typed: str, vocab: dict) -> bool:
         typed_norm = self._normalize_for_compare(typed)
         if not typed_norm:
             return False
 
-        for cand in candidates:
-            full = self._normalize_for_compare(cand)
-            main = self._normalize_for_compare(self._extract_main_lexeme(cand))
-            if typed_norm == full or typed_norm == main:
-                return True
+        for cand in self._typing_candidates(vocab):
+            # Variants: "(to) save" => ["save", "to save"]
+            for variant in self._expand_parenthetical_variants(cand):
+                full = self._normalize_for_compare(variant)
+                main = self._normalize_for_compare(self._extract_main_lexeme(variant))
+                if typed_norm == full or typed_norm == main:
+                    return True
+
         return False
 
     def _rgba_to_hex(self, rgba) -> str:
@@ -1457,15 +1565,20 @@ class LearnMixin:
             return "ffffff"
 
     def _typing_candidates(self, vocab: dict) -> list[str]:
+        """
+        Split the expected answer string into top-level candidates.
+        IMPORTANT: commas inside (...) are treated as "options", not separators.
+        """
         foreign = vocab.get("foreign_language", "") or ""
-        parts = re.split(r"[;,/]", foreign)
-        cands = [p.strip() for p in parts if p.strip()]
+        cands = self._split_outside_parentheses(foreign, seps={";", ",", "/"})
+        cands = [c.strip() for c in cands if str(c).strip()]
         return cands or [foreign.strip()]
 
     def _best_candidate_for_feedback(self, typed: str, vocab: dict) -> str:
         """
         Wählt den Kandidaten, der am ähnlichsten zum User-Input ist,
         damit Feedback sinnvoll ist.
+        (Beachtet Klammern-Varianten: '(to) save' matcht auch 'to save'.)
         """
         typed_norm = self._normalize_for_compare(typed)
         cands = self._typing_candidates(vocab)
@@ -1474,20 +1587,28 @@ class LearnMixin:
 
         try:
             import difflib
-            best = cands[0]
+
+            best_cand = cands[0]
             best_score = -1.0
+
             for c in cands:
-                score = difflib.SequenceMatcher(None, typed_norm, self._normalize_for_compare(c)).ratio()
+                # score against best matching variant
+                score = 0.0
+                for v in self._expand_parenthetical_variants(c):
+                    score = max(score, difflib.SequenceMatcher(None, typed_norm, self._normalize_for_compare(v)).ratio())
                 if score > best_score:
                     best_score = score
-                    best = c
-            return best
+                    best_cand = c
+
+            return best_cand
         except Exception:
             return cands[0]
 
     def _typing_mismatch_count(self, typed: str, expected: str) -> int:
         a = self._normalize_for_compare(typed)
-        b = self._normalize_for_compare(expected)
+        best_expected = self._best_variant_for_expected(typed, expected)
+        b = self._normalize_for_compare(best_expected)
+
         n = min(len(a), len(b))
         mism = sum(1 for i in range(n) if a[i] != b[i])
         mism += abs(len(a) - len(b))
@@ -1499,12 +1620,14 @@ class LearnMixin:
           - Buchstaben werden positionsweise mit expected_norm verglichen
           - Leerzeichen/Punktuation werden neutral dargestellt
           - Inhalt in (...) wird ignoriert (neutral), wie bisher
+        NOTE: expected kann Klammern enthalten; wir nehmen den Variant, der am besten zum User passt.
         """
         ok_hex = self._rgba_to_hex(self.colors.get("success", (0.2, 0.7, 0.3, 1)))
         bad_hex = self._rgba_to_hex(self.colors.get("danger", (0.9, 0.22, 0.21, 1)))
         neutral_hex = self._rgba_to_hex(self.colors.get("text", (1, 1, 1, 1)))
 
-        exp_norm = self._normalize_for_compare(expected)
+        best_expected = self._best_variant_for_expected(typed, expected)
+        exp_norm = self._normalize_for_compare(best_expected)
         exp_i = 0
 
         out = []
@@ -1551,6 +1674,7 @@ class LearnMixin:
         settings = (self.config_data.get("settings", {}) or {})
         typing_cfg = (settings.get("typing", {}) or {})
         self._typing_require_self_rating = bool_cast(typing_cfg.get("require_self_rating", True))
+        self._typing_clear_on_wrong = bool_cast(typing_cfg.get("clear_on_wrong", False))
 
 
         center = AnchorLayout(
@@ -1721,6 +1845,13 @@ class LearnMixin:
             f"Dein Input: {colored}\n"
             f"Lösung: {expected}"
         )
+
+        # Optional: Eingabefeld nach falscher Antwort leeren
+        if bool(getattr(self, "_typing_clear_on_wrong", False)):
+            try:
+                self.typing_input.text = ""
+            except Exception:
+                pass
 
         # Fokus halten
         if hasattr(self, "force_focus"):
@@ -2060,3 +2191,4 @@ class LearnMixin:
         if self._register_session_step(was_correct=False, steps=steps):
             return
         self._advance_to_next()
+

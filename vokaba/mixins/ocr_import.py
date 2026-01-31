@@ -324,6 +324,14 @@ class OcrImportMixin:
     # -------------------------
 
     def _ocr_pick_image(self, _instance=None):
+        # Android: Wenn der Picker echte /storage-Pfade zurückgibt, brauchen wir ggf. READ_* Permission.
+        # (Der Photo-Picker/Gallery liefert oft content:// und klappt ohne.)
+        if kivy_platform == "android" and hasattr(self, "ensure_android_read_images"):
+            try:
+                self.ensure_android_read_images()
+            except Exception:
+                pass
+
         def on_sel(selection):
             log(f"ocr picker selection raw: {selection!r}")
 
@@ -407,16 +415,27 @@ class OcrImportMixin:
                 pass
 
     def _ocr_copy_to_local_file(self, src_raw: str) -> str:
+        """
+        Copies a picked image into our app-internal cache folder and returns a REAL file path.
+        Android note: the picker can return content:// URIs (Documents/Files). We copy them immediately.
+        """
         try:
             src = self._normalize_picker_path(src_raw) if hasattr(self, "_normalize_picker_path") else str(src_raw)
         except Exception:
             src = str(src_raw)
 
+        # Robust extension guess (also works for content:// URIs)
         ext = ".png"
-        low = (src or "").lower()
-        if low.endswith(".jpg") or low.endswith(".jpeg"):
-            ext = ".jpg"
-        elif low.endswith(".png"):
+        try:
+            if hasattr(self, "guess_image_extension"):
+                ext = str(self.guess_image_extension(src)) or ".png"
+            else:
+                low = (src or "").lower()
+                if low.endswith(".jpg") or low.endswith(".jpeg"):
+                    ext = ".jpg"
+                elif low.endswith(".png"):
+                    ext = ".png"
+        except Exception:
             ext = ".png"
 
         base = Path(data_dir()) / "ocr_cache"
@@ -424,6 +443,7 @@ class OcrImportMixin:
             base.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
+
         dest = base / f"ocr_input_{int(time.time())}{ext}"
 
         try:
@@ -437,6 +457,21 @@ class OcrImportMixin:
             log(f"ocr copy failed: {e} | src={src!r} -> dest={str(dest)!r}")
             ok = False
 
+        # Safety: reject empty/invalid files (common when permissions are missing)
+        if ok and dest.exists():
+            try:
+                if int(dest.stat().st_size) < 32:
+                    log(f"ocr: copied file is too small ({dest.stat().st_size} bytes) -> treating as invalid")
+                    try:
+                        dest.unlink(missing_ok=True)  # py3.8+: ignore if not exists
+                    except Exception:
+                        try:
+                            dest.unlink()
+                        except Exception:
+                            pass
+                    return ""
+            except Exception:
+                pass
 
         return str(dest) if ok and dest.exists() else ""
 
@@ -1220,3 +1255,4 @@ class OcrImportMixin:
         centers.sort()
         bounds = [(centers[i] + centers[i + 1]) / 2.0 for i in range(k - 1)]
         return centers, bounds
+

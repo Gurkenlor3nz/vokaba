@@ -287,6 +287,21 @@ class SettingsMixin:
         grid2.add_widget(lbl2)
         grid2.add_widget(cb2)
 
+        # 2b) Typing: clear input after wrong answer
+        clear_need = bool_cast(get_in(self.config_data, ["settings", "typing", "clear_on_wrong"], False))
+        lbl3 = self.make_text_label(
+            getattr(labels, "settings_typing_clear_on_wrong", "Tippen: Eingabefeld nach falsch leeren"),
+            size_hint_y=None, height=dp(50))
+        cb3 = CheckBox(active=clear_need, size_hint=(None, None), size=(dp(36), dp(36)))
+
+        def _set_clear(_inst, value):
+            set_in(self.config_data, ["settings", "typing", "clear_on_wrong"], bool(value))
+            save.save_settings(self.config_data)
+
+        cb3.bind(active=_set_clear)
+        grid2.add_widget(lbl3)
+        grid2.add_widget(cb3)
+
         extra_card.add_widget(grid2)
 
         # 3) Global learn language filter button
@@ -474,3 +489,4 @@ class SettingsMixin:
         ok_btn.bind(on_press=lambda *_a: (self.set_custom_color(color_key, picker.color), popup.dismiss()))
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
+

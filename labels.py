@@ -253,6 +253,7 @@ settings_sort_stacks_by_language = "Stapel nach Sprache sortieren"
 settings_global_learn_languages = "Allgemeines Lernen: Sprachen"
 settings_global_learn_languages_button = "Sprachen auswählen…"
 settings_typing_require_self_rating = "Tippen: Selbstbewertung nach richtig"
+settings_typing_clear_on_wrong = "Tippen: Eingabefeld nach falsch leeren"
 
 # Typing – Auto-Scoring
 knowledge_delta_typing_wrong_per_attempt = -0.06
@@ -268,3 +269,4 @@ export_hint_reset = (
     "Deine Daten in der App bleiben unverändert."
 )
 export_confirm_button = "Exportieren"
+

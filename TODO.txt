@@ -2,12 +2,10 @@ Hotfix
 bild geht nicht, wenn man direkt auf import drückt, nur von galerie geht es nicht
 
 0.2
-textbox clear, nach falscher eingabe bei tippen
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 anki- Csv support
 splash screen ändern
-icons
-inhalt von klammern ohne klammern wird als korrekt gewertet, ohne inhalt von klammern aber auch.
+icons for Android
 
 GUI rework 
 

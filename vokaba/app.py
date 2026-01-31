@@ -65,6 +65,14 @@ class VokabaApp(
         except Exception as e:
             log(f"Could not set window size: {e}")
 
+        # Android/Tablet: ensure the system IME can appear (helps handwriting keyboards)
+        if platform == "android":
+            try:
+                Window.softinput_mode = "below_target"
+            except Exception:
+                pass
+
+
         self.current_focus_input = None
         self._install_dead_key_composer()
         self.window = FloatLayout()
@@ -180,4 +188,5 @@ class VokabaApp(
                 self.persist_knowledge_levels()
         except Exception:
             pass
+
 
