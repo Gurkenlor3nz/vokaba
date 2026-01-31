@@ -7,4 +7,4 @@ Fixed bugs:
 - Fixed crash when saving Metadata
 
 Misc changes:
-
+- Added OCR-Import warning label

@@ -148,6 +148,9 @@ class OcrImportMixin:
         form = BoxLayout(orientation="vertical", spacing=dp(12), padding=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
+        form.add_widget(self.make_text_label(""))
+        form.add_widget(self.make_text_label("Hinweis: das Foto sollte nur die relevanten Spalten beinhalten."))
+        form.add_widget(self.make_text_label(""))
 
         # Pick image
         pick_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=input_h, spacing=dp(10))
