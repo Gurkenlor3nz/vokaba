@@ -8,7 +8,6 @@ anki- Csv support
 splash screen ändern
 icons
 inhalt von klammern ohne klammern wird als korrekt gewertet, ohne inhalt von klammern aber auch.
-unknown character bei export finished popup
 
 GUI rework 
 

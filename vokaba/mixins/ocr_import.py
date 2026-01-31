@@ -1117,7 +1117,7 @@ class OcrImportMixin:
 
         Popup(
             title="OCR Import",
-            content=self.make_text_label(f"✅ Importiert: {added} Einträge", halign="center"),
+            content=self.make_text_label(f" Importiert: {added} Einträge", halign="center"),
             size_hint=(0.7, None),
             height=dp(180),
         ).open()
