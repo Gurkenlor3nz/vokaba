@@ -293,3 +293,42 @@ class EditVocabMixin:
         card.add_widget(scroll)
         center.add_widget(card)
         self.window.add_widget(center)
+
+
+    def edit_metadata_func(self, stack: str, _instance=None):
+        old_path = self.vocab_root() + stack
+
+        # aktuelle Meta lesen (damit latin_* gleich bleibt)
+        own_old, foreign_old, latin_lang, latin_active = save.read_languages(old_path)
+
+        # neue Werte aus UI
+        own = (getattr(self.edit_own_language_textbox, "text", None) or own_old or "Deutsch").strip()
+        foreign = (getattr(self.edit_foreign_language_textbox, "text", None) or foreign_old or "Englisch").strip()
+
+        new_name = (self.edit_name_textbox.text or "").strip()
+        if not new_name:
+            new_name = stack[:-4]
+
+        new_stack = new_name if new_name.endswith(".csv") else (new_name + ".csv")
+        new_path = self.vocab_root() + new_stack
+
+        # ggf. Datei umbenennen
+        if new_stack != stack:
+            if os.path.exists(new_path):
+                log(f"Cannot rename: target exists: {new_stack}")
+                return
+            os.rename(old_path, new_path)
+            stack = new_stack
+            old_path = new_path
+
+        # Meta speichern (ohne Vokabeln anzufassen)
+        save.change_languages(
+            old_path,
+            new_own=own,
+            new_foreign=foreign,
+            new_latin=latin_lang or "",
+            latin_active=bool(latin_active),
+        )
+
+        self.select_stack(stack)
+
