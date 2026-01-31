@@ -1,6 +1,5 @@
 Hotfix
 bild geht nicht, wenn man direkt auf import drückt, nur von galerie geht es nicht
-crash beim metadaten speichern, speichert trotsdem
 warnen, dass nur die angegebenen spalten gezeigt werden müssen auf ocr
 
 0.2
