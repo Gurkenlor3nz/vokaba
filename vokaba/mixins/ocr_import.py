@@ -22,7 +22,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
-from kivy.uix.textinput import TextInput
+from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 
@@ -1255,4 +1255,3 @@ class OcrImportMixin:
         centers.sort()
         bounds = [(centers[i] + centers[i + 1]) / 2.0 for i in range(k - 1)]
         return centers, bounds
-

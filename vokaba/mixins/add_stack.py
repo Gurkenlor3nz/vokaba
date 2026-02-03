@@ -6,7 +6,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
+from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.label import Label

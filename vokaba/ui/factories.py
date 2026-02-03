@@ -164,8 +164,10 @@ class UIFactoryMixin:
         ti.background_color = self.colors.get("card_selected", self.colors["card"])
         ti.foreground_color = self.colors["text"]
         ti.cursor_color = self.colors["accent"]
-        ti.padding = [dp(12), dp(10), dp(12), dp(10)]
-        ti.font_size = sp(self.cfg_int(["settings", "gui", "text_font_size"], 18))
+        pad_dp = [12, 10, 12, 10]
+        ti.padding = [dp(pad_dp[0]), dp(pad_dp[1]), dp(pad_dp[2]), dp(pad_dp[3])]
+        font_sp = self.cfg_int(["settings", "gui", "text_font_size"], 18)
+        ti.font_size = sp(font_sp)
 
         # Single-line: NICHT mehr automatisch zentrieren.
         # Wenn der Caller explizit halign="center" setzt (z.B. Zahlenfelder), bleibt es center.
@@ -192,6 +194,19 @@ class UIFactoryMixin:
                     self.current_focus_input = None
 
         ti.bind(focus=_on_focus)
+
+        # Android: if this is a native-overlay TextInput, forward theme + metrics.
+        if hasattr(ti, "apply_native_style"):
+            try:
+                ti.apply_native_style(
+                    text_rgba=self.colors["text"],
+                    hint_rgba=self.colors.get("muted", self.colors["text"]),
+                    padding_dp=pad_dp,
+                    font_sp=font_sp,
+                )
+            except Exception:
+                pass
+
         return ti
 
     def force_focus(self, ti: TextInput, delays=(0, 0.15, 0.35)):
@@ -774,4 +789,3 @@ class UIFactoryMixin:
                 pass
 
         return False
-

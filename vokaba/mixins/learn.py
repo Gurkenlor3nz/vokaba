@@ -16,8 +16,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
-
+from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 import labels
 import save
 from vokaba.core.logging_utils import log
@@ -2191,4 +2190,3 @@ class LearnMixin:
         if self._register_session_step(was_correct=False, steps=steps):
             return
         self._advance_to_next()
-

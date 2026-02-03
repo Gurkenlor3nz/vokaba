@@ -8,11 +8,11 @@ Added features:
 Fixed bugs:
 - Fixed crash when saving Metadata
 - Removed unknown character when finishing OCR-Import
-**- Fixed OCR not recognizing pictures from android native file chooser and only from Gallery**
+- Fixed OCR not recognizing pictures from android native file chooser and only from Gallery
 **- Fixed not being able to write into textboxes with tablet-pen**
 
 Misc changes:
 - Added OCR-Import warning label
 
 
-** = not yet confirmed
+** = not yet fully tested

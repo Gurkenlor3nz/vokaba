@@ -6,7 +6,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
+from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 from kivy.uix.colorpicker import ColorPicker
 
 import labels
@@ -489,4 +489,3 @@ class SettingsMixin:
         ok_btn.bind(on_press=lambda *_a: (self.set_custom_color(color_key, picker.color), popup.dismiss()))
         cancel_btn.bind(on_press=lambda *_a: popup.dismiss())
         popup.open()
-

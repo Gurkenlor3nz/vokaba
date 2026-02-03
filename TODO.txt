@@ -1,13 +1,14 @@
 Hotfix
-bild geht nicht, wenn man direkt auf import drückt, nur von galerie geht es nicht
 
 0.2
-mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 anki- Csv support
 splash screen ändern
 icons for Android
 
 GUI rework 
+
+0.3
+mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 
 -mal schauen wann-
 update, ohne alle dateien zu verlieren bei android

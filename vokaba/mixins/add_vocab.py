@@ -5,8 +5,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
-
+from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 import labels
 import save
 from vokaba.core.logging_utils import log
