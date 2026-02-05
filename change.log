@@ -4,6 +4,8 @@ Changes for next version: 0.0.2
 Added features:
 - Added setting to automatically clear the typing input textbox when making a mistake
 - Added recognizing the content of brackets without brackets in typing mode as correct
+- Added working icon for Android apk
+- Added Logo as Splash-screen
 
 Fixed bugs:
 - Fixed crash when saving Metadata

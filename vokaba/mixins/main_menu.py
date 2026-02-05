@@ -263,7 +263,7 @@ class MainMenuMixin:
 
         # Top-left: logo => about
         top_left = AnchorLayout(anchor_x="left", anchor_y="top", padding=30 * pad_mul)
-        vokaba_logo = self.make_icon_button("assets/vokaba_logo.png", on_press=self.about, size=dp(104))
+        vokaba_logo = self.make_icon_button("assets/vokaba_logo.png", on_press=self.about, size=dp(80))
         top_left.add_widget(vokaba_logo)
         self.window.add_widget(top_left)
 

@@ -2,8 +2,7 @@ Hotfix
 
 0.2
 anki- Csv support
-splash screen ändern
-icons for Android
+
 
 GUI rework 
 
@@ -14,3 +13,5 @@ mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 update, ohne alle dateien zu verlieren bei android
 PVP gegen andere
 tts
+ich akzeptiere nutzungsbedingungen check
+beim import "ich bin mir den risiken bewusst" check
