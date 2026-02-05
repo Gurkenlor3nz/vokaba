@@ -3,6 +3,9 @@ Hotfix
 0.2
 anki- Csv support
 
+agb link in settings
+beim import "ich bin mir den risiken bewusst" check
+ich akzeptiere nutzungsbedingungen check
 
 GUI rework 
 
@@ -13,7 +16,5 @@ mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 update, ohne alle dateien zu verlieren bei android
 PVP gegen andere
 tts
-ich akzeptiere nutzungsbedingungen check
-beim import "ich bin mir den risiken bewusst" check
 Werbung
 speach to text ??? google tastatur
