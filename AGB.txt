@@ -1,0 +1,3 @@
+AGB: https://firecast.de/agb.html
+Datenschutz: https://firecast.de/datenschutz.html
+Impressum: https://firecast.de/impressum.html
