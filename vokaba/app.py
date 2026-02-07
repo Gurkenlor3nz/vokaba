@@ -57,6 +57,8 @@ class VokabaApp(
             Config.set("input", "mouse", "mouse,disable_multitouch")
 
         self.config_data = save.load_settings()
+        from kivy.clock import Clock
+        Clock.schedule_once(lambda dt: self._maybe_show_legal_popup(), 0.4)
         self.colors = apply_theme_from_config(self.config_data)
 
         try:
@@ -100,6 +102,11 @@ class VokabaApp(
         self.config_data.clear()
         self.config_data.update(new_cfg)
         self.colors = apply_theme_from_config(self.config_data)
+
+    def _maybe_show_legal_popup(self):
+        legal = self.config_data.get("settings", {}).get("legal", {})
+        if not legal.get("accepted", False):
+            self.show_legal_popup()
 
     # ------------------------------------------------------------
     # Physical keyboard "dead key" composer (Android tablets etc.)

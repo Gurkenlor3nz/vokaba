@@ -1,26 +1,138 @@
-from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from vokaba.ui.widgets.vokaba_textinput import VokabaTextInput as TextInput
 from kivy.uix.colorpicker import ColorPicker
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.checkbox import CheckBox
+from kivy.metrics import dp
 
 import labels
 import save
-
+import webbrowser
+import datetime
 from vokaba.core.dict_path import get_in, set_in, bool_cast
 from vokaba.core.logging_utils import log
 from vokaba.ui.widgets.rounded import RoundedCard
 from vokaba.ui.widgets.slider import NoScrollSlider
 from vokaba.theme.theme_manager import apply_theme_from_config
 
+AGB_URL = "https://firecast.de/agb.html"
+PRIVACY_URL = "https://firecast.de/datenschutz.html"
 
 class SettingsMixin:
     """Settings screen (GUI sliders, theme, learning mode toggles)."""
+
+    def show_legal_popup(self):
+        root = BoxLayout(
+            orientation="vertical",
+            spacing=dp(14),
+            padding=dp(16)
+        )
+
+        root.add_widget(Label(
+            text="[b]Nutzungsbedingungen & Datenschutz[/b]",
+            markup=True,
+            size_hint_y=None,
+            height=dp(32)
+        ))
+
+        def link_label(text, url):
+            lbl = Label(
+                text=f"[ref={url}]{text}[/ref]",
+                markup=True,
+                size_hint_y=None,
+                height=dp(28)
+            )
+            lbl.bind(on_ref_press=lambda _, u: webbrowser.open(u))
+            return lbl
+
+        btn = self.make_secondary_button("AGB – firecast.de")
+        btn.bind(on_press=lambda *_: webbrowser.open(AGB_URL))
+        root.add_widget(btn)
+
+        btn = self.make_secondary_button("Datenschutz – firecast.de")
+        btn.bind(on_press=lambda *_: webbrowser.open(PRIVACY_URL))
+        root.add_widget(btn)
+
+        check_row = BoxLayout(
+            orientation="horizontal",
+            spacing=dp(10),
+            size_hint_y=None,
+            height=dp(48)
+        )
+
+        checkbox = CheckBox(active=False, size_hint=(None, None), size=(dp(32), dp(32)))
+
+        check_text = Label(
+            text="Ich habe die AGB und den Datenschutz\n"
+                 "gelesen und verstanden.",
+            halign="left",
+            valign="middle"
+        )
+        check_text.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+
+        check_row.add_widget(checkbox)
+        check_row.add_widget(check_text)
+        root.add_widget(check_row)
+
+        error_label = Label(
+            text="",
+            color=(1, 0.25, 0.25, 1),
+            size_hint_y=None,
+            height=dp(22)
+        )
+        root.add_widget(error_label)
+
+        btn_row = BoxLayout(
+            orientation="horizontal",
+            spacing=dp(10),
+            size_hint_y=None,
+            height=dp(44)
+        )
+
+        cancel_btn = self.make_secondary_button("Abbrechen", size_hint=(0.5, 1))
+        ok_btn = self.make_primary_button("OK", size_hint=(0.5, 1))
+        ok_btn.disabled = True
+        ok_btn.opacity = 0.5
+
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(ok_btn)
+        root.add_widget(btn_row)
+
+        popup = Popup(
+            title="Rechtliches",
+            content=root,
+            size_hint=(0.85, 0.55),
+            auto_dismiss=False
+        )
+
+        def on_check(_inst, value):
+            ok_btn.disabled = not value
+            ok_btn.opacity = 1.0 if value else 0.5
+            error_label.text = ""
+
+        checkbox.bind(active=on_check)
+
+        def on_ok(_):
+            if not checkbox.active:
+                error_label.text = "Bitte bestätige die Checkbox."
+                return
+
+            legal = self.config_data["settings"]["legal"]
+            legal["accepted"] = True
+            legal["accepted_at"] = (datetime.datetime.now().isoformat(timespec="seconds"))
+
+
+            save.save_settings(self.config_data)
+            popup.dismiss()
+
+        cancel_btn.bind(on_press=lambda *_: popup.dismiss())
+        ok_btn.bind(on_press=on_ok)
+
+        popup.open()
 
     def settings(self, _instance=None):
         log("opened settings")
