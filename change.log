@@ -6,6 +6,8 @@ Added features:
 - Added recognizing the content of brackets without brackets in typing mode as correct
 - Added working icon for Android apk
 - Added Logo as Splash-screen
+- Added button for AGB to the about screen to comply with german laws
+- Added button for Privacy to the about screen to comply with german laws
 
 Fixed bugs:
 - Fixed crash when saving Metadata
