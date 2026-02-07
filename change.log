@@ -8,6 +8,7 @@ Added features:
 - Added Logo as Splash-screen
 - Added button for AGB to the about screen to comply with german laws
 - Added button for Privacy to the about screen to comply with german laws
+- Added AGB check screen
 
 Fixed bugs:
 - Fixed crash when saving Metadata

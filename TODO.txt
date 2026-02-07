@@ -4,7 +4,6 @@ Hotfix
 anki- Csv support
 
 beim import "ich bin mir den risiken bewusst" check
-ich akzeptiere nutzungsbedingungen check
 OCR geht auf desktop nicht, irgendwas von online-models. Es sollen nur offline models genutzt werden.
 
 GUI rework 
