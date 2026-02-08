@@ -1,11 +1,23 @@
 Hotfix
 
 0.2
+
+Manchmal geht ocr am pc nicht.
+
 anki- Csv support
 
 agb link in settings
+
 beim import "ich bin mir den risiken bewusst" check
+
 ich akzeptiere nutzungsbedingungen check
+
+Streak bar läd sich stück für stück weiter auf, wenn sie voll ist, läd sie sich mit gold weiter auf,
+wenn man weiter als sein daily goal lernt, also die bar ein zweites mal auffüllt mit dem gold kriegt man einen Joker,
+bei dem man einen tag die streak auslassen kann.
+
+ferien-modus, man darf bis zu 6 wochen seine streak pausieren. Man legt die zeit am anfang fest,
+dund muss dannach min. 1 woche lernen, bevor man sie nochmal pausieren kann.
 
 GUI rework 
 
