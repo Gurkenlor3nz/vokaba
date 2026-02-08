@@ -426,6 +426,7 @@ def load_settings() -> dict:
     typing_cfg.setdefault("require_self_rating", True)
 
     save_settings(cfg)
+    ensure_legal_defaults(cfg)
     return cfg
 
 
@@ -495,3 +496,9 @@ def persist_single_entry(vocab: dict, stack_vocab_lists: dict, stack_meta_map: d
         latin_lang=latin_lang or "Latein",
         latin_active=bool(latin_active),
     )
+
+def ensure_legal_defaults(cfg: dict) -> None:
+    settings = cfg.setdefault("settings", {})
+    legal = settings.setdefault("legal", {})
+    legal.setdefault("accepted", False)
+    legal.setdefault("accepted_at", None)

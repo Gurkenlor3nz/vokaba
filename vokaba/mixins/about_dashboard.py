@@ -56,11 +56,25 @@ class AboutDashboardMixin:
         b(getattr(labels, "about_discord_text", "Feedback…"), dp(90))
 
         DISCORD_URL = "https://discord.gg/zRRmfgt8Cn"
+        AGB_URL = "https://firecast.de/agb.html"
+        PRIVACY_URL = "https://firecast.de/datenschutz.html"
+
         btn = self.make_primary_button(getattr(labels, "about_discord_button", "Zum Discord-Server"), size_hint=(1, None), height=dp(50))
         btn.bind(on_press=lambda _i: webbrowser.open(DISCORD_URL))
         content.add_widget(btn)
 
+        btn = self.make_secondary_button(getattr(labels, "about_agb_button", "Zu den AGB"), size_hint=(1, None), height=dp(40))
+        btn.bind(on_press=lambda _i: webbrowser.open(AGB_URL))
+        content.add_widget(btn)
+
+        btn = self.make_secondary_button(getattr(labels, "about_privacy_button", "Zum Datenschutz"), size_hint=(1, None), height=dp(40))
+        btn.bind(on_press=lambda _i: webbrowser.open(PRIVACY_URL))
+        content.add_widget(btn)
+
+
         content.add_widget(self.make_text_label(f"{getattr(labels, 'about_discord_link_prefix', 'Direkter Link:')} {DISCORD_URL}", size_hint_y=None, height=dp(40)))
+        content.add_widget(self.make_text_label(f"{getattr(labels, 'about_discord_link_prefix', 'Direkter Link:')} {AGB_URL}", size_hint_y=None, height=dp(40)))
+        content.add_widget(self.make_text_label(f"{getattr(labels, 'about_discord_link_prefix', 'Direkter Link:')} {PRIVACY_URL}", size_hint_y=None, height=dp(40)))
 
         content.add_widget(
             self.make_text_label(

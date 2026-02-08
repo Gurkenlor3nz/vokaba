@@ -192,6 +192,8 @@ about_discord_text = (
 )
 
 about_discord_button = "Zum Discord-Server"
+about_agb_button = "Zu den AGB"
+about_privacy_button = "Zum Datenschutz"
 
 about_discord_link_prefix = "Direkter Link:"
 

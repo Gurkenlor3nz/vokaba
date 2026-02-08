@@ -20,7 +20,6 @@ def _is_android() -> bool:
         )
     )
 
-
 # Wichtig für Tablets/Stift: System-IME nutzen (Handschrift in Tastatur/IME)
 # ABER: auf Desktop führt 'systemanddock' oft zur hässlichen Kivy-Dock-Tastatur
 # -> daher NUR auf Android setzen.
