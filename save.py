@@ -333,12 +333,18 @@ def change_languages(
 
 def load_settings() -> dict:
     """
-    Loads config.yml with sane defaults. Keeps your existing keys:
+    Loads config.yml with sane defaults.
+
+    Stored structure:
       settings.daily_target_cards
       settings.gui.(title_font_size, text_font_size, padding_multiplicator)
       settings.session_size
       settings.theme.(preset, base_preset, custom_colors)
       settings.modes.*
+      settings.stack_sort_mode
+      settings.global_learn_languages
+      settings.typing.(require_self_rating, clear_on_wrong)
+      settings.legal.(accepted, accepted_at, stack_import_notice_accepted, stack_import_notice_accepted_at)
       stats.(daily_progress_date, daily_cards_done, total_learn_time_seconds)
     """
     default_config = {
@@ -364,26 +370,32 @@ def load_settings() -> dict:
                 "typing": True,
                 "syllable_salad": True,
             },
+            "stack_sort_mode": "name",
+            "global_learn_languages": [],
+            "typing": {
+                "require_self_rating": True,
+                "clear_on_wrong": False,
+            },
+            "legal": {
+                "accepted": False,
+                "accepted_at": None,
+                "stack_import_notice_accepted": False,
+                "stack_import_notice_accepted_at": None,
+            },
         },
         "stats": {
             "daily_progress_date": None,
             "daily_cards_done": 0,
             "total_learn_time_seconds": 0,
         },
-        "stack_sort_mode": "name",  # "name" | "language"
-        "global_learn_languages": [],  # [] = alle
-        "typing": {
-            "require_self_rating": True,
-        },
     }
 
-    migrate_legacy_data()  # einmalig alte config/csvs rüberziehen
+    migrate_legacy_data()
     ensure_data_layout()
     cfg_path = str(config_path())
 
     if not os.path.exists(cfg_path):
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(default_config, f, allow_unicode=True, sort_keys=False)
+        save_settings(default_config)
         return default_config
 
     try:
@@ -416,26 +428,35 @@ def load_settings() -> dict:
     for k, v in default_config["settings"]["modes"].items():
         modes.setdefault(k, v)
 
+    settings.setdefault("stack_sort_mode", default_config["settings"]["stack_sort_mode"])
+    settings.setdefault("global_learn_languages", list(default_config["settings"]["global_learn_languages"]))
+
+    typing_cfg = settings.setdefault("typing", {})
+    typing_cfg.setdefault("require_self_rating", default_config["settings"]["typing"]["require_self_rating"])
+    typing_cfg.setdefault("clear_on_wrong", default_config["settings"]["typing"]["clear_on_wrong"])
+
     stats = cfg.setdefault("stats", {})
     for k, v in default_config["stats"].items():
         stats.setdefault(k, v)
 
-    settings.setdefault("stack_sort_mode", "name")
-    settings.setdefault("global_learn_languages", [])
-    typing_cfg = settings.setdefault("typing", {})
-    typing_cfg.setdefault("require_self_rating", True)
-
-    save_settings(cfg)
     ensure_legal_defaults(cfg)
+    save_settings(cfg)
     return cfg
-
 
 def save_settings(config: dict) -> None:
     ensure_data_layout()
     with open(str(config_path()), "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
+def ensure_legal_defaults(cfg: dict) -> None:
+    settings = cfg.setdefault("settings", {})
+    legal = settings.setdefault("legal", {})
 
+    legal.setdefault("accepted", False)
+    legal.setdefault("accepted_at", None)
+
+    legal.setdefault("stack_import_notice_accepted", False)
+    legal.setdefault("stack_import_notice_accepted_at", None)
 
 # ------------------------------------------------------------
 # Persistence helpers (same API as before)
@@ -496,9 +517,3 @@ def persist_single_entry(vocab: dict, stack_vocab_lists: dict, stack_meta_map: d
         latin_lang=latin_lang or "Latein",
         latin_active=bool(latin_active),
     )
-
-def ensure_legal_defaults(cfg: dict) -> None:
-    settings = cfg.setdefault("settings", {})
-    legal = settings.setdefault("legal", {})
-    legal.setdefault("accepted", False)
-    legal.setdefault("accepted_at", None)

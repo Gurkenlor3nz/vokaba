@@ -480,9 +480,22 @@ class OcrImportMixin:
     # -------------------------
 
     def _ocr_start(self, _instance=None):
-        if not getattr(self, "_ocr_image_path", None):
+        image_path = str(getattr(self, "_ocr_image_path", "") or "").strip()
+        if not image_path:
             self._ocr_setup_error.text = "Bitte zuerst ein Bild auswählen."
             return
+
+        img = Path(image_path).expanduser()
+        if not img.exists() or not img.is_file():
+            self._ocr_setup_error.text = "Die ausgewählte Bilddatei wurde nicht gefunden."
+            return
+
+        try:
+            if int(img.stat().st_size) < 32:
+                self._ocr_setup_error.text = "Die ausgewählte Bilddatei ist leer oder unvollständig."
+                return
+        except Exception:
+            pass
 
         try:
             n_cols = int(getattr(self, "_ocr_colcount_spinner", None).text)
@@ -497,12 +510,12 @@ class OcrImportMixin:
         lang = (getattr(self, "_ocr_lang_auto", "en") or "en").strip() or "en"
         use_ori = False
 
+        self._ocr_setup_error.text = ""
+
         token = object()
         self._ocr_cancel_token = token
 
         self._ocr_loading_screen()
-
-        # direkt nach: self._ocr_loading_screen()
 
         if kivy_platform == "android":
             try:
@@ -518,7 +531,7 @@ class OcrImportMixin:
             target=self._ocr_worker,
             kwargs={
                 "token": token,
-                "image_path": str(self._ocr_image_path),
+                "image_path": str(img),
                 "lang": lang,
                 "use_textline_orientation": use_ori,
                 "n_cols": n_cols,
@@ -527,6 +540,7 @@ class OcrImportMixin:
             daemon=True,
         )
         th.start()
+
 
     def _ocr_loading_screen(self):
         self.window.clear_widgets()
@@ -589,96 +603,211 @@ class OcrImportMixin:
             n_cols: int,
             mapping: List[str],
     ):
+        def _is_lang_problem(msg: str) -> bool:
+            low = (msg or "").lower()
+            return (
+                    "lang" in low
+                    and (
+                            "unsupported" in low
+                            or "unknown" in low
+                            or "not recognized" in low
+                            or "not support" in low
+                    )
+            )
+
+        def _friendly_desktop_error(raw: str) -> str:
+            raw = (raw or "").strip()
+            low = raw.lower()
+
+            if raw == "timeout":
+                return (
+                    "Desktop-OCR hat zu lange benötigt.\n\n"
+                    "Beim ersten Start kann das Laden der Modelle länger dauern.\n"
+                    "Bitte Internetverbindung und Schreibrechte im App-Datenordner prüfen."
+                )
+
+            if "file not found" in low:
+                return "Die ausgewählte Bilddatei wurde nicht gefunden."
+
+            if "no module named" in low and ("paddleocr" in low or "paddlex" in low):
+                return (
+                    "Desktop-OCR konnte nicht gestartet werden.\n\n"
+                    "Wahrscheinlich fehlen OCR-Abhängigkeiten im Desktop-Build "
+                    "(z. B. paddleocr/paddlex)."
+                )
+
+            if "no module named" in low and "vokaba" in low:
+                return (
+                    "Desktop-OCR konnte nicht gestartet werden.\n\n"
+                    "Der OCR-Runner wurde im Desktop-Build nicht korrekt gefunden."
+                )
+
+            if "output json is missing" in low:
+                return (
+                    "Desktop-OCR wurde gestartet, hat aber keine Ergebnisdatei erzeugt.\n\n"
+                    "Bitte Build, Schreibrechte und OCR-Abhängigkeiten prüfen."
+                )
+
+            if raw:
+                return raw
+
+            return "Desktop-OCR ist fehlgeschlagen."
+
         try:
+            if getattr(self, "_ocr_cancel_token", None) is not token:
+                return
+
+            img = Path(str(image_path)).expanduser()
+            if not img.exists() or not img.is_file():
+                raise RuntimeError("Die ausgewählte Bilddatei wurde nicht gefunden.")
+
+            try:
+                if int(img.stat().st_size) < 32:
+                    raise RuntimeError("Die ausgewählte Bilddatei ist leer oder unvollständig.")
+            except OSError:
+                pass
+
             # -------------------------
             # ANDROID: ML Kit (on-device)
             # -------------------------
             if kivy_platform == "android":
                 from vokaba.ocr_android_mlkit import mlkit_to_paddle_pages_async
-                json_pages = mlkit_to_paddle_pages_async(str(image_path), timeout_sec=60.0)
+                json_pages = mlkit_to_paddle_pages_async(str(img), timeout_sec=60.0)
 
             # -------------------------
             # DESKTOP: PaddleOCR (subprocess runner)
             # -------------------------
             else:
+                import sys
+                from vokaba.core.paths import runtime_root
+
                 cache = Path(data_dir()) / "paddleocr_models"
                 cache.mkdir(parents=True, exist_ok=True)
 
-                os.environ.setdefault("DISABLE_AUTO_LOGGING_CONFIG", "1")
-                os.environ.setdefault("PADDLEX_HOME", str(cache))
-                os.environ.setdefault("PADDLEX_CACHE_DIR", str(cache))
+                out_dir = Path(data_dir()) / "ocr_cache"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_json = out_dir / f"ocr_out_{int(time.time())}_{os.getpid()}.json"
 
-                import sys
+                env = os.environ.copy()
+                env.setdefault("DISABLE_AUTO_LOGGING_CONFIG", "1")
+                env.setdefault("PADDLEX_HOME", str(cache))
+                env.setdefault("PADDLEX_CACHE_DIR", str(cache))
+                env.setdefault("DISABLE_MODEL_SOURCE_CHECK", "True")
+                env.setdefault("FLAGS_use_mkldnn", "0")
+                env.setdefault("OMP_NUM_THREADS", "1")
+                env.setdefault("PYTHONUTF8", "1")
+                env.setdefault("PYTHONIOENCODING", "utf-8")
 
-                out_json = Path(data_dir()) / "ocr_cache" / f"ocr_out_{int(time.time())}.json"
-                try:
-                    out_json.parent.mkdir(parents=True, exist_ok=True)
-                except Exception:
-                    pass
+                base_args = [
+                    "--image", str(img.resolve()),
+                    "--lang", str(lang),
+                    "--cache-dir", str(cache),
+                    "--out", str(out_json),
+                    "--no-source-check",
+                ]
+                if use_textline_orientation:
+                    base_args.append("--textline-ori")
 
+                candidate_cmds = []
                 is_frozen = bool(getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"))
 
                 if is_frozen:
-                    cmd = [
-                        sys.executable,
-                        "--ocr-runner",
-                        "--image", str(image_path),
-                        "--lang", str(lang),
-                        "--cache-dir", str(cache),
-                        "--out", str(out_json),
-                        "--no-source-check",
-                    ]
-                else:
-                    cmd = [
-                        sys.executable,
-                        "-m", "vokaba.ocr_runner",
-                        "--image", str(image_path),
-                        "--lang", str(lang),
-                        "--cache-dir", str(cache),
-                        "--out", str(out_json),
-                        "--no-source-check",
-                    ]
+                    candidate_cmds.append([sys.executable, "--ocr-runner", *base_args])
 
-                if use_textline_orientation:
-                    cmd.append("--textline-ori")
+                candidate_cmds.append([sys.executable, "-m", "vokaba.ocr_runner", *base_args])
 
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                runner_py = Path(runtime_root()) / "vokaba" / "ocr_runner.py"
+                if runner_py.exists():
+                    candidate_cmds.append([sys.executable, str(runner_py), *base_args])
 
-                if proc.returncode != 0:
-                    err = (proc.stderr or proc.stdout or "").strip()
-                    low = err.lower()
+                # Dedupe
+                unique_cmds = []
+                seen = set()
+                for cmd in candidate_cmds:
+                    key = tuple(cmd)
+                    if key not in seen:
+                        seen.add(key)
+                        unique_cmds.append(cmd)
 
-                    lang_problem = ("lang" in low) and (
-                                "unsupported" in low or "unknown" in low or "not recognized" in low)
+                def _attempt_cmd(cmd: List[str]):
+                    try:
+                        out_json.unlink(missing_ok=True)
+                    except Exception:
+                        try:
+                            if out_json.exists():
+                                out_json.unlink()
+                        except Exception:
+                            pass
 
-                    # fallback to english if lang not supported
-                    if lang_problem and lang != "en":
-                        cmd2 = cmd[:]  # copy
-                        for i in range(len(cmd2) - 1):
-                            if cmd2[i] == "--lang":
-                                cmd2[i + 1] = "en"
+                    try:
+                        proc = subprocess.run(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            cwd=str(runtime_root()),
+                            env=env,
+                            timeout=180,
+                        )
+                    except subprocess.TimeoutExpired:
+                        return None, "timeout"
+
+                    raw = (proc.stderr or proc.stdout or "").strip()
+
+                    if proc.returncode != 0:
+                        return None, raw or f"OCR subprocess failed (code {proc.returncode})"
+
+                    if not out_json.exists():
+                        return None, raw or "OCR subprocess returned ok, but output JSON is missing."
+
+                    try:
+                        payload = json.loads(out_json.read_text(encoding="utf-8"))
+                    except Exception as e:
+                        return None, f"OCR output konnte nicht gelesen werden: {e}"
+
+                    if not isinstance(payload, list):
+                        return None, "OCR output has unexpected format."
+
+                    return payload, ""
+
+                json_pages = None
+                last_err = ""
+
+                for cmd in unique_cmds:
+                    if getattr(self, "_ocr_cancel_token", None) is not token:
+                        return
+
+                    pages, err = _attempt_cmd(cmd)
+
+                    if pages is None and _is_lang_problem(err) and lang != "en":
+                        cmd_en = cmd[:]
+                        for i in range(len(cmd_en) - 1):
+                            if cmd_en[i] == "--lang":
+                                cmd_en[i + 1] = "en"
                                 break
-                        proc2 = subprocess.run(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                        if proc2.returncode == 0:
-                            proc = proc2
-                        else:
-                            err2 = (proc2.stderr or proc2.stdout or "").strip()
-                            raise RuntimeError(err2 or err or f"OCR subprocess failed (code {proc.returncode})")
-                    else:
-                        raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
+                        pages, err2 = _attempt_cmd(cmd_en)
+                        if pages is not None:
+                            json_pages = pages
+                            break
+                        err = err2 or err
 
-                if proc.returncode != 0:
-                    err = (proc.stderr or proc.stdout or "").strip()
-                    raise RuntimeError(err or f"OCR subprocess failed (code {proc.returncode})")
+                    if pages is not None:
+                        json_pages = pages
+                        break
 
-                if not out_json.exists():
-                    raise RuntimeError("OCR subprocess returned ok, but output JSON is missing.")
+                    last_err = err
 
-                json_pages = json.loads(out_json.read_text(encoding="utf-8"))
                 try:
                     out_json.unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    try:
+                        if out_json.exists():
+                            out_json.unlink()
+                    except Exception:
+                        pass
+
+                if json_pages is None:
+                    raise RuntimeError(_friendly_desktop_error(last_err))
 
             # -------------------------
             # Common parse -> rows -> entries
@@ -703,7 +832,7 @@ class OcrImportMixin:
             self._ocr_review_screen(entries)
 
         Clock.schedule_once(_done, 0)
-
+        
     def _ocr_show_error(self, msg: str):
         try:
             if hasattr(self, "_ocr_loading_clock") and self._ocr_loading_clock is not None:

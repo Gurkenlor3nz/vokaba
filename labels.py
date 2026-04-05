@@ -272,3 +272,25 @@ export_hint_reset = (
 )
 export_confirm_button = "Exportieren"
 
+
+stack_import_button_text = "Stapel importieren …"
+stack_import_popup_title = "Stapel importieren"
+stack_import_hint = ""
+
+stack_import_disclaimer_title = "Stapel-Import"
+stack_import_disclaimer_body = (
+    "Importierte Stapel können von dir selbst oder aus Drittquellen stammen.\n\n"
+    "Du bist selbst dafür verantwortlich, dass du importierte Inhalte verwenden darfst "
+    "und dass sie rechtmäßig, richtig und für deinen Zweck geeignet sind.\n\n"
+    "Für Stapel, die nicht von dir stammen oder aus Drittquellen kommen, "
+    "übernimmt der Betreiber keine Verantwortung."
+)
+stack_import_disclaimer_checkbox = "Ich bin mir der Risiken bewusst."
+stack_import_disclaimer_error = "Bitte bestätige die Checkbox."
+stack_import_disclaimer_agb_button = "AGB – firecast.de"
+
+ocr_failed_hint = (
+    "Desktop: Beim ersten Start kann OCR länger dauern, weil Modelle lokal geladen werden. "
+    "Wenn es weiter fehlschlägt, prüfe Internet, Schreibrechte im App-Datenordner "
+    "und ob der Desktop-Build paddleocr/paddlex korrekt enthält."
+)

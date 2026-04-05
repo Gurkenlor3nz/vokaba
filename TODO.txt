@@ -1,11 +1,7 @@
 Hotfix
-manchmal geht ocr pc nicht
 
-import knopf von import auf stapel import ändern.
 
 0.2
-
-beim import "ich bin mir den risiken bewusst" check
 
 GUI rework
 
@@ -24,6 +20,8 @@ Mehrere bilder auf einmal import
 mit dem Stift in die Textbox schreiben geht bei eingeben nicht tab
 
 anki- Csv support
+
+File chooser unter linux zu portal oder nautilus oder so ändern.
 
 -mal schauen wann-
 update, ohne alle dateien zu verlieren bei android
